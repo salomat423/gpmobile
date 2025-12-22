@@ -1,0 +1,40 @@
+name: gppadel
+description: "GPPadel Flutter Project"
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+
+  # Пакеты для иконок и сплэш-экрана
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.3.7
+
+  # Линтер (был не на своем месте, вернули сюда)
+  flutter_lints: ^2.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Чтобы работали локальные картинки (логотип), раскомментируйте это:
+  assets:
+    - assets/
+
+# --- НАСТРОЙКИ (В самом низу, без отступов) ---
+
+flutter_native_splash:
+  color: "#0F3628"
+  image: "assets/icon.png"
+  android: true
+  ios: true
+  fullscreen: false
