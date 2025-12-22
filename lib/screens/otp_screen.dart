@@ -50,7 +50,7 @@ class _OtpScreenState extends State<OtpScreen> {
     return Scaffold(
       appBar: AppBar(
         automaticallyImplyActions: false,
-      )
+      ),
       body: Padding(
         padding: const EdgeInsets.all(30.0),
         child: Column(
@@ -59,7 +59,6 @@ class _OtpScreenState extends State<OtpScreen> {
             const SizedBox(height: 10),
             Text('Мы отправили код на +7 ${widget.phoneNumber}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
             const SizedBox(height: 40),
-
             // Поля ввода OTP
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
