@@ -97,11 +97,11 @@ class _AuthScreenState extends State<AuthScreen> {
                   height: 60,
                   child: ElevatedButton(
                     onPressed: () {
-                      String rawPhone = _phoneController.text.replaceAll(' ', '');
+                      final rawPhone = _phoneController.text.replaceAll(' ', '');
                       if (rawPhone.length == 10) {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (context) => OtpScreen(phoneNumber: _phoneController.text),
+                            builder: (context) => OtpScreen(phoneNumber: rawPhone),
                           ),
                         );
                       } else {

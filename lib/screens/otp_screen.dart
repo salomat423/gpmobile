@@ -48,7 +48,9 @@ class _OtpScreenState extends State<OtpScreen> {
     final textColor = isDark ? Colors.white : AppTheme.textPrimary;
 
     return Scaffold(
-      appBar: AppBar(leading: const BackButton()),
+      appBar: AppBar(
+        automaticallyImplyActions: false,
+      )
       body: Padding(
         padding: const EdgeInsets.all(30.0),
         child: Column(
