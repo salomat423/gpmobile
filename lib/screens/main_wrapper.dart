@@ -5,8 +5,7 @@ import 'booking_screen.dart';
 import 'social_screen.dart';
 import 'rating_screen.dart';
 import 'profile_screen.dart';
-// Убедитесь, что путь к теме верный, либо закомментируйте, если не используете кастомные классы из app_theme
-import '../theme/app_theme.dart';
+
 
 class MainWrapper extends StatefulWidget {
   const MainWrapper({super.key});

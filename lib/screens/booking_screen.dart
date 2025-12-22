@@ -180,8 +180,8 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
 
   @override
   Widget build(BuildContext context) {
-    final activeColor = Theme.of(context).brightness == Brightness.dark ? AppTheme.accentColor : AppTheme.primaryColor;
-
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeColor = isDark ? AppTheme.accentColor : AppTheme.primaryColor;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Бронирование'),
@@ -343,7 +343,6 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
   Widget _buildCourtCard(Map<String, dynamic> court) {
     bool isAvailable = (court['status']?.toString() ?? '') == 'free';
     final String price = (court['basePrice'] ?? court['price'] ?? '0 ₸').toString();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 20),
