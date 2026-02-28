@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../core/di/app_scope.dart';
 import 'home_screen.dart';
 import 'booking_screen.dart';
 import 'social_screen.dart';
@@ -14,12 +15,27 @@ class MainWrapper extends StatefulWidget {
 
 class _MainWrapperState extends State<MainWrapper> {
   int _currentIndex = 0;
+  int _unreadCount = 0;
 
   /// Метод для переключения на вкладку "Бронь"
   void _goToBookingTab() {
     setState(() {
       _currentIndex = 1;
     });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUnread();
+  }
+
+  Future<void> _loadUnread() async {
+    try {
+      final count = await AppScope.instance.socialRepository.unreadCount();
+      if (!mounted) return;
+      setState(() => _unreadCount = count);
+    } catch (_) {}
   }
 
   @override
@@ -60,7 +76,7 @@ class _MainWrapperState extends State<MainWrapper> {
           elevation: 0,
           selectedLabelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
           unselectedLabelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
-          items: const [
+          items: [
             BottomNavigationBarItem(
               icon: Icon(Icons.dashboard_outlined),
               activeIcon: Icon(Icons.dashboard_rounded),
@@ -72,8 +88,13 @@ class _MainWrapperState extends State<MainWrapper> {
               label: 'Бронь',
             ),
             BottomNavigationBarItem(
-              icon: Icon(Icons.people_outline_rounded),
-              activeIcon: Icon(Icons.people_rounded),
+              icon: _unreadCount > 0
+                  ? Badge(
+                      label: Text('$_unreadCount'),
+                      child: const Icon(Icons.people_outline_rounded),
+                    )
+                  : const Icon(Icons.people_outline_rounded),
+              activeIcon: const Icon(Icons.people_rounded),
               label: 'Друзья',
             ),
             BottomNavigationBarItem(

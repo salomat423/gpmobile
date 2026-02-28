@@ -1,200 +1,237 @@
 import 'package:flutter/material.dart';
-import '../theme/app_theme.dart';
-import 'auth_screen.dart'; // Импорт экрана входа
 
-class ProfileScreen extends StatelessWidget {
+import '../core/di/app_scope.dart';
+import '../theme/app_theme.dart';
+import 'auth_screen.dart';
+import 'club_services_screen.dart';
+import 'notifications_screen.dart';
+
+class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
 
-  // --- Логика выхода из аккаунта ---
-  void _showLogoutDialog(BuildContext context) {
-    showDialog(
+  @override
+  State<ProfileScreen> createState() => _ProfileScreenState();
+}
+
+class _ProfileScreenState extends State<ProfileScreen> {
+  late Future<Map<String, dynamic>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _load();
+  }
+
+  Future<Map<String, dynamic>> _load() async {
+    final me = await AppScope.instance.authRepository.me();
+    final stats = await AppScope.instance.authRepository.stats();
+    final league = await AppScope.instance.authRepository.league();
+    return {'me': me, 'stats': stats, 'league': league};
+  }
+
+  Future<void> _reload() async {
+    setState(() {
+      _future = _load();
+    });
+    await _future;
+  }
+
+  Future<void> _confirmLogout() async {
+    final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Выход'),
-        content: const Text('Вы уверены, что хотите выйти из аккаунта?'),
+        title: const Text('Выход из аккаунта'),
+        content: const Text('Вы уверены, что хотите выйти?'),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Отмена', style: TextStyle(color: Colors.grey)),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context); // Закрываем диалог
-              // Переход на экран входа и полная очистка навигации
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (context) => const AuthScreen()),
-                    (route) => false,
-              );
-            },
-            child: const Text('Выйти', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Выйти', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
     );
+    if (ok != true || !mounted) return;
+    await AppScope.instance.authRepository.logout();
+    AppScope.instance.authState.value = AuthState.unauthenticated;
+    if (!mounted) return;
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (route) => false,
+    );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
+  Future<void> _confirmDeleteAccount() async {
+    // Step 1
+    final step1 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(Icons.warning_amber_rounded, size: 48, color: Colors.orange),
+        title: const Text('Удаление аккаунта'),
+        content: const Text(
+          'Это действие необратимо. Все ваши данные, бронирования, абонементы и статистика будут удалены.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Продолжить', style: TextStyle(color: Colors.orange)),
+          ),
+        ],
+      ),
+    );
+    if (step1 != true || !mounted) return;
 
-    final Color titleColor = isDark ? Colors.white : AppTheme.textPrimary;
-    final Color subTitleColor = isDark ? Colors.white70 : Colors.grey;
+    // Step 2
+    final step2 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(Icons.delete_forever_rounded, size: 48, color: Colors.redAccent),
+        title: const Text('Вы точно уверены?'),
+        content: const Text(
+          'После удаления восстановить аккаунт будет невозможно. Все ваши друзья, рейтинг и история матчей будут потеряны.',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Нет, отменить')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Да, удалить', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (step2 != true || !mounted) return;
 
-    return Scaffold(
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(20),
+    // Step 3 — type confirmation
+    final confirmCtrl = TextEditingController();
+    final step3 = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        icon: const Icon(Icons.dangerous_rounded, size: 48, color: Colors.red),
+        title: const Text('Последнее подтверждение'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Введите слово УДАЛИТЬ для подтверждения:'),
+            const SizedBox(height: 12),
+            TextField(
+              controller: confirmCtrl,
+              decoration: InputDecoration(
+                hintText: 'УДАЛИТЬ',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          StatefulBuilder(
+            builder: (ctx, setSt) => ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () {
+                if (confirmCtrl.text.trim() == 'УДАЛИТЬ') {
+                  Navigator.pop(ctx, true);
+                }
+              },
+              child: const Text('Удалить навсегда', style: TextStyle(color: Colors.white)),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (step3 != true || !mounted) return;
+
+    final navigator = Navigator.of(context);
+    try {
+      await AppScope.instance.authRepository.deleteAccount();
+    } catch (_) {}
+    if (!mounted) return;
+    AppScope.instance.authState.value = AuthState.unauthenticated;
+    navigator.pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const AuthScreen()),
+      (route) => false,
+    );
+  }
+
+  void _showQrClubPass(BuildContext ctx, Map<String, dynamic> me) async {
+    showDialog(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    String qrContent = '';
+    try {
+      final qr = await AppScope.instance.secondaryRepository.gymQr();
+      qrContent = (qr['qr_content'] ?? '').toString();
+    } catch (_) {
+      qrContent = 'QR unavailable';
+    }
+    if (!ctx.mounted) return;
+    Navigator.of(ctx).pop();
+
+    final fullName = '${me['first_name'] ?? ''} ${me['last_name'] ?? ''}'.trim();
+
+    if (!mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [AppTheme.primaryColor, Color(0xFF1B5E20)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(24),
+          ),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // --- 1. Аватар и Имя ---
-              const SizedBox(height: 10),
-              Center(
-                child: Column(
-                  children: [
-                    Container(
-                      width: 100,
-                      height: 100,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        border: Border.all(color: theme.cardColor, width: 4),
-                        boxShadow: [
-                          BoxShadow(
-                              color: Colors.black.withOpacity(0.1),
-                              blurRadius: 15,
-                              offset: const Offset(0, 5)
-                          )
-                        ],
-                        image: const DecorationImage(
-                          image: NetworkImage('https://i.pravatar.cc/150?img=11'),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'Александр Иванов',
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: titleColor),
-                    ),
-                    Text(
-                      '+7 777 123 45 67',
-                      style: TextStyle(fontSize: 14, color: subTitleColor, fontWeight: FontWeight.w500),
-                    ),
-                  ],
-                ),
+              const Text('Клубный пропуск', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              Text(
+                fullName.isEmpty ? 'Участник клуба' : fullName,
+                style: const TextStyle(color: Colors.white70, fontSize: 14),
               ),
-
-              const SizedBox(height: 30),
-
-              // --- 2. QR Пропуск ---
-              GestureDetector(
-                onTap: () => showDialog(context: context, builder: (context) => _buildQRDialog(context)),
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: theme.cardColor,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(color: isDark ? Colors.white10 : AppTheme.primaryColor.withOpacity(0.1)),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 15, offset: const Offset(0, 5))
-                    ],
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.white12 : AppTheme.textPrimary,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: const Icon(Icons.qr_code_2_rounded, color: AppTheme.accentColor, size: 32),
-                      ),
-                      const SizedBox(width: 20),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Клубный пропуск', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: titleColor)),
-                          const SizedBox(height: 4),
-                          Text('Нажмите для входа', style: TextStyle(color: subTitleColor, fontSize: 13)),
-                        ],
-                      ),
-                      const Spacer(),
-                      const Icon(Icons.chevron_right_rounded, color: Colors.grey),
-                    ],
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 30),
-
-              // --- 3. Статус и Баллы ---
+              const SizedBox(height: 20),
               Container(
-                padding: const EdgeInsets.all(20),
+                width: 200, height: 200,
+                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
+                child: Center(
+                  child: qrContent.isEmpty || qrContent == 'QR unavailable'
+                      ? const Icon(Icons.qr_code_2_rounded, size: 140, color: AppTheme.primaryColor)
+                      : Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.qr_code_2_rounded, size: 120, color: AppTheme.primaryColor),
+                            const SizedBox(height: 4),
+                            Text(qrContent, style: const TextStyle(fontSize: 10, color: Colors.grey), maxLines: 2, overflow: TextOverflow.ellipsis),
+                          ],
+                        ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [AppTheme.primaryColor, Color(0xFF1B5E20)],
-                    begin: Alignment.topLeft, end: Alignment.bottomRight,
-                  ),
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(color: AppTheme.primaryColor.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 6))
-                  ],
+                  color: AppTheme.accentColor,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('Статус', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                        SizedBox(height: 4),
-                        Text('Gold Member 🏆', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                    Container(height: 40, width: 1, color: Colors.white24),
-                    const Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text('Баллы', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                        SizedBox(height: 4),
-                        Text('2 450', style: TextStyle(color: AppTheme.accentColor, fontSize: 22, fontWeight: FontWeight.bold)),
-                      ],
-                    ),
-                  ],
-                ),
+                child: const Text('Покажите QR на входе', style: TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.bold, fontSize: 13)),
               ),
-
-              const SizedBox(height: 30),
-
-              // --- 4. Меню ---
-              _buildMenuItem(context, icon: Icons.credit_card_rounded, title: 'Мои карты'),
-
-              // Переключатель темы
-              _buildMenuItem(
-                context,
-                icon: isDark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-                title: 'Темная тема',
-                trailing: Switch(
-                  value: isDark,
-                  activeColor: AppTheme.accentColor,
-                  onChanged: (value) {
-                    themeNotifier.value = value ? ThemeMode.dark : ThemeMode.light;
-                  },
-                ),
-              ),
-
-              _buildMenuItem(context, icon: Icons.notifications_none_rounded, title: 'Уведомления'),
-              _buildMenuItem(context, icon: Icons.language_rounded, title: 'Язык', subtitle: 'Русский'),
-
-              const SizedBox(height: 20),
-
-              // --- Кнопка выхода (Обновленная) ---
+              const SizedBox(height: 16),
               TextButton(
-                onPressed: () => _showLogoutDialog(context),
-                child: const Text('Выйти из аккаунта', style: TextStyle(color: Colors.redAccent, fontSize: 16, fontWeight: FontWeight.bold)),
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Закрыть', style: TextStyle(color: Colors.white70)),
               ),
-              const SizedBox(height: 20),
             ],
           ),
         ),
@@ -202,101 +239,208 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildMenuItem(BuildContext context, {
-    required IconData icon,
-    required String title,
-    String? subtitle,
-    Widget? trailing,
-    VoidCallback? onTap
-  }) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 2))
-        ],
-      ),
-      child: ListTile(
-        onTap: onTap,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        leading: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: isDark ? Colors.white12 : AppTheme.bgColor,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, color: isDark ? Colors.white : AppTheme.primaryColor, size: 22),
-        ),
-        title: Text(
-            title,
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: isDark ? Colors.white : AppTheme.textPrimary)
-        ),
-        subtitle: subtitle != null ? Text(subtitle, style: const TextStyle(color: Colors.grey)) : null,
-        trailing: trailing ?? const Icon(Icons.chevron_right_rounded, color: Colors.grey),
-      ),
-    );
-  }
-
-  Widget _buildQRDialog(BuildContext context) {
-    final theme = Theme.of(context);
-    final isDark = theme.brightness == Brightness.dark;
-    final textColor = isDark ? Colors.white : AppTheme.textPrimary;
-
-    return Dialog(
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-            color: theme.cardColor,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))
-            ]
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Ваш пропуск', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: textColor)),
-            const SizedBox(height: 8),
-            const Text('Поднесите к считывателю', style: TextStyle(color: Colors.grey, fontSize: 14)),
-            const SizedBox(height: 24),
-            Container(
-              height: 220,
-              width: 220,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: Colors.grey.withOpacity(0.2)),
-              ),
-              child: Stack(
-                alignment: Alignment.center,
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, dynamic>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        if (snapshot.hasError) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Профиль')),
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.qr_code_2, size: 200, color: Colors.black),
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                    child: const Icon(Icons.sports_tennis_rounded, color: AppTheme.accentColor, size: 24),
-                  )
+                  const Text('Не удалось загрузить профиль'),
+                  const SizedBox(height: 8),
+                  Text(snapshot.error.toString(), textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  ElevatedButton(onPressed: _reload, child: const Text('Повторить')),
                 ],
               ),
             ),
-            const SizedBox(height: 24),
-            Text('Обновление через 25 сек...', textAlign: TextAlign.center, style: TextStyle(color: isDark ? AppTheme.accentColor : AppTheme.primaryColor, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 12),
-            const LinearProgressIndicator(value: 0.3, color: AppTheme.accentColor, backgroundColor: Colors.grey),
-            const SizedBox(height: 20),
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text('Закрыть', style: TextStyle(fontSize: 16, color: textColor)),
-            )
-          ],
-        ),
+          );
+        }
+
+        final payload = snapshot.data ?? const {};
+        final me = (payload['me'] as Map?)?.cast<String, dynamic>() ?? {};
+        final stats = ((payload['stats'] as Map?)?['stats'] as Map?)?.cast<String, dynamic>() ?? {};
+        final league = (((payload['league'] as Map?)?['current_league']) as Map?)?.cast<String, dynamic>() ?? {};
+
+        final fullName = '${me['first_name'] ?? ''} ${me['last_name'] ?? ''}'.trim();
+        final phone = (me['phone_number'] ?? me['username'] ?? '').toString();
+        final avatar = me['avatar']?.toString();
+        final elo = (me['rating_elo'] ?? 0).toString();
+        final leagueName = (league['name'] ?? '—').toString();
+
+        return Scaffold(
+          appBar: AppBar(title: const Text('Профиль')),
+          body: RefreshIndicator(
+            onRefresh: _reload,
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    radius: 32,
+                    backgroundImage: NetworkImage(
+                      (avatar != null && avatar.isNotEmpty)
+                          ? avatar
+                          : 'https://i.pravatar.cc/150?img=11',
+                    ),
+                  ),
+                  title: Text(
+                    fullName.isEmpty ? 'Пользователь' : fullName,
+                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 18),
+                  ),
+                  subtitle: Text(phone),
+                ),
+                const SizedBox(height: 12),
+
+                // --- Club pass with QR ---
+                GestureDetector(
+                  onTap: () => _showQrClubPass(context, me),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [AppTheme.primaryColor, Color(0xFF1B5E20)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [BoxShadow(color: AppTheme.primaryColor.withValues(alpha: 0.3), blurRadius: 10, offset: const Offset(0, 4))],
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.qr_code_2_rounded, color: Colors.white, size: 36),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text('Клубный пропуск', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                              Text('$leagueName  •  ELO $elo', style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded, color: Colors.white70),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('Лига', style: TextStyle(color: Colors.grey)),
+                          Text(leagueName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          const Text('ELO', style: TextStyle(color: Colors.grey)),
+                          Text(elo, style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryColor)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Статистика', style: TextStyle(fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      _statRow(Icons.sports_tennis, 'Бронирований', '${stats['total_bookings'] ?? 0}'),
+                      _statRow(Icons.emoji_events, 'Сыграно матчей', '${stats['matches_played'] ?? 0}'),
+                      _statRow(Icons.star, 'Побед', '${stats['matches_won'] ?? 0}'),
+                      _statRow(Icons.fitness_center, 'Посещений зала', '${stats['gym_visits'] ?? 0}'),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ListTile(
+                  tileColor: Theme.of(context).cardColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  title: const Text('Уведомления'),
+                  leading: const Icon(Icons.notifications_outlined),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const NotificationsScreen()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  tileColor: Theme.of(context).cardColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  title: const Text('Сервисы клуба'),
+                  leading: const Icon(Icons.miscellaneous_services_outlined),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const ClubServicesScreen()),
+                    );
+                  },
+                ),
+                const SizedBox(height: 24),
+                OutlinedButton.icon(
+                  onPressed: _confirmLogout,
+                  icon: const Icon(Icons.logout),
+                  label: const Text('Выйти из аккаунта'),
+                  style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton.icon(
+                  onPressed: _confirmDeleteAccount,
+                  icon: const Icon(Icons.delete_forever, color: Colors.redAccent, size: 18),
+                  label: const Text('Удалить аккаунт', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
+                ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _statRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: Colors.grey),
+          const SizedBox(width: 8),
+          Expanded(child: Text(label)),
+          Text(value, style: const TextStyle(fontWeight: FontWeight.bold)),
+        ],
       ),
     );
   }

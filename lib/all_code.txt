@@ -1,13 +1,10 @@
 \n===== ./screens/main_wrapper.dart =====\n
 import 'package:flutter/material.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart';
 import 'home_screen.dart';
 import 'booking_screen.dart';
 import 'social_screen.dart';
 import 'rating_screen.dart';
 import 'profile_screen.dart';
-// Убедитесь, что путь к теме верный, либо закомментируйте, если не используете кастомные классы из app_theme
-import '../theme/app_theme.dart';
 
 class MainWrapper extends StatefulWidget {
   const MainWrapper({super.key});
@@ -19,22 +16,7 @@ class MainWrapper extends StatefulWidget {
 class _MainWrapperState extends State<MainWrapper> {
   int _currentIndex = 0;
 
-  @override
-  void initState() {
-    super.initState();
-    _initialization();
-  }
-
-  /// Логика инициализации и скрытия нативного сплэш-экрана
-  void _initialization() async {
-    // Имитация загрузки или проверка токена (2 секунды)
-    await Future.delayed(const Duration(seconds: 2));
-    // Убираем заставку
-    FlutterNativeSplash.remove();
-  }
-
-  /// Метод для переключения на вкладку "Бронь" (индекс 1)
-  /// Передается в HomeScreen
+  /// Метод для переключения на вкладку "Бронь"
   void _goToBookingTab() {
     setState(() {
       _currentIndex = 1;
@@ -46,23 +28,20 @@ class _MainWrapperState extends State<MainWrapper> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
 
-    // Список страниц. Важно: HomeScreen получает колбэк для навигации
     final List<Widget> pages = [
       HomeScreen(onGoToBooking: _goToBookingTab),
       const BookingScreen(),
       const SocialScreen(),
       const RatingScreen(),
-      const ProfileScreen()
+      const ProfileScreen(),
     ];
 
     return Scaffold(
-      // IndexedStack сохраняет состояние страниц (не перезагружает их при переключении)
       body: IndexedStack(
         index: _currentIndex,
         children: pages,
       ),
       bottomNavigationBar: Container(
-        // Добавляем верхнюю границу для визуального разделения
         decoration: BoxDecoration(
           color: theme.cardColor,
           border: Border(
@@ -75,25 +54,13 @@ class _MainWrapperState extends State<MainWrapper> {
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
           onTap: (index) => setState(() => _currentIndex = index),
-
-          // Цвета берутся из темы
           backgroundColor: theme.bottomNavigationBarTheme.backgroundColor,
           selectedItemColor: theme.bottomNavigationBarTheme.selectedItemColor,
           unselectedItemColor: theme.bottomNavigationBarTheme.unselectedItemColor,
-
-          type: BottomNavigationBarType.fixed, // Чтобы иконки не "плясали" при >3 элементах
-          elevation: 0, // Убираем тень, так как используем border сверху
-
-          // Настройка стилей текста подписей
-          selectedLabelStyle: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold
-          ),
-          unselectedLabelStyle: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w500
-          ),
-
+          type: BottomNavigationBarType.fixed,
+          elevation: 0,
+          selectedLabelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+          unselectedLabelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.dashboard_outlined),
@@ -674,8 +641,10 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
     );
   }
 }\n===== ./screens/booking_screen.dart =====\n
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import '../data/mock_data.dart';
+import 'package:http/http.dart' as http;
+
 import '../theme/app_theme.dart';
 
 class BookingScreen extends StatefulWidget {
@@ -687,24 +656,40 @@ class BookingScreen extends StatefulWidget {
 
 class _BookingScreenState extends State<BookingScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  int _selectedDateIndex = 0;
-  String _selectedFilter = 'Все';
 
-  late List<Map<String, dynamic>> _userBookings;
+  int _selectedDateIndex = 0;
+
+  // Фильтры под твой API court_type
+  String _selectedFilter = 'Все';
+  final List<String> _filters = ['Все', 'INDOOR', 'OUTDOOR', 'PANORAMIC'];
+
+  final List<DateTime> _dates = List.generate(14, (i) => DateTime.now().add(Duration(days: i)));
+  final List<String> _months = [
+    'Январь','Февраль','Март','Апрель','Май','Июнь',
+    'Июль','Август','Сентябрь','Октябрь','Ноябрь','Декабрь'
+  ];
 
   final List<String> _morningSlots = ['07:00', '08:00', '09:00', '10:00', '11:00'];
   final List<String> _daySlots = ['12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
   final List<String> _eveningSlots = ['18:00', '19:00', '20:00', '21:00', '22:00'];
 
-  final List<DateTime> _dates = List.generate(14, (index) => DateTime.now().add(Duration(days: index)));
-  final List<String> _filters = ['Все', 'Hard', 'Clay', 'Panorama', 'Grass'];
-  final List<String> _months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+  // ====== ТВОЙ БЭК ======
+  static const String apiBaseUrl = 'https://e708b6a42fe3.ngrok-free.app';
+  static const String courtsPath = '/api/courts/';
+  static const String bookingsPath = '/api/bookings/'; // проверь, есть ли такой
+  // ======================
+
+  // ✅ БЕЗ late: чтобы не падало на hot reload / state restore
+  Future<List<Map<String, dynamic>>>? _courtsFuture;
+  Future<List<Map<String, dynamic>>>? _bookingsFuture;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _userBookings = List.from(MockData.myBookings);
+
+    _courtsFuture = _fetchCourts();
+    _bookingsFuture = _fetchBookings(); // может падать если endpoint нет — это нормально, покажем ошибку
   }
 
   @override
@@ -713,32 +698,273 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     super.dispose();
   }
 
-  void _cancelBooking(int index) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Отменить бронь?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Назад')),
-          ElevatedButton(
-            onPressed: () {
-              setState(() => _userBookings.removeAt(index));
-              Navigator.pop(context);
+  // --------- API ---------
+
+  Future<List<Map<String, dynamic>>> _fetchCourts() async {
+    final uri = Uri.parse('$apiBaseUrl$courtsPath');
+    final res = await http.get(uri).timeout(const Duration(seconds: 12));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception('Courts API error: ${res.statusCode}');
+    }
+
+    final data = jsonDecode(res.body);
+    if (data is! List) throw Exception('Unexpected courts format (expected List)');
+    return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchBookings() async {
+    final uri = Uri.parse('$apiBaseUrl$bookingsPath');
+    final res = await http.get(uri).timeout(const Duration(seconds: 12));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception('Bookings API error: ${res.statusCode}');
+    }
+
+    final data = jsonDecode(res.body);
+
+    if (data is List) {
+      return data.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    if (data is Map<String, dynamic> && data['results'] is List) {
+      return (data['results'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    if (data is Map<String, dynamic> && data['items'] is List) {
+      return (data['items'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+
+    throw Exception('Unexpected bookings format');
+  }
+
+  void _reloadCourts() {
+    setState(() => _courtsFuture = _fetchCourts());
+  }
+
+  void _reloadBookings() {
+    setState(() => _bookingsFuture = _fetchBookings());
+  }
+
+  // --------- UI ---------
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeColor = isDark ? AppTheme.accentColor : AppTheme.primaryColor;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Бронирование'),
+        automaticallyImplyLeading: false,
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: activeColor,
+          indicatorColor: activeColor,
+          tabs: const [
+            Tab(text: 'Корты'),
+            Tab(text: 'Брони'),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          _buildCourtsTab(),
+          _buildBookingsTab(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCourtsTab() {
+    return Column(
+      children: [
+        _buildDateSelector(),
+        _buildFilters(),
+        Expanded(
+          child: FutureBuilder<List<Map<String, dynamic>>>(
+            // ✅ fallback если вдруг future null
+            future: _courtsFuture ?? _fetchCourts(),
+            builder: (context, snap) {
+              if (snap.connectionState == ConnectionState.waiting) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              if (snap.hasError) {
+                return _ErrorState(
+                  title: 'Не удалось загрузить корты',
+                  error: snap.error.toString(),
+                  onRetry: _reloadCourts,
+                );
+              }
+
+              final courts = snap.data ?? [];
+              if (courts.isEmpty) {
+                return const Center(child: Text('Корты не найдены', style: TextStyle(color: Colors.grey)));
+              }
+
+              final filtered = courts.where((c) {
+                if (_selectedFilter == 'Все') return true;
+                return (c['court_type']?.toString() ?? '') == _selectedFilter;
+              }).toList();
+
+              if (filtered.isEmpty) {
+                return const Center(child: Text('Нет кортов по фильтру', style: TextStyle(color: Colors.grey)));
+              }
+
+              return ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                itemCount: filtered.length,
+                itemBuilder: (context, i) => _buildCourtCard(filtered[i]),
+              );
             },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
-            child: const Text('Да, отменить'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildBookingsTab() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      // ✅ fallback если вдруг future null
+      future: _bookingsFuture ?? _fetchBookings(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        if (snap.hasError) {
+          return _ErrorState(
+            title: 'Не удалось загрузить брони',
+            error: snap.error.toString(),
+            onRetry: _reloadBookings,
+          );
+        }
+
+        final bookings = snap.data ?? [];
+        if (bookings.isEmpty) {
+          return const Center(child: Text('Пока нет броней', style: TextStyle(color: Colors.grey)));
+        }
+
+        // ПОКА просто выводим сырой список (подстроим после твоего curl /api/bookings/)
+        return RefreshIndicator(
+          onRefresh: () async => _reloadBookings(),
+          child: ListView.builder(
+            padding: const EdgeInsets.all(20),
+            itemCount: bookings.length,
+            itemBuilder: (context, i) {
+              final b = bookings[i];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(b.toString()),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  // --------- Widgets ---------
+
+  Widget _buildCourtCard(Map<String, dynamic> court) {
+    final name = (court['name'] ?? 'Корт').toString();
+    final type = (court['court_type'] ?? '').toString();
+    final isActive = court['is_active'] == true;
+
+    // price_per_hour приходит строкой "8000.00"
+    final priceRaw = (court['price_per_hour'] ?? '0').toString();
+    final priceText = _formatKztPerHour(priceRaw);
+
+    final imageUrl = court['image']?.toString(); // может быть null
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: (imageUrl != null && imageUrl.isNotEmpty)
+                ? Image.network(
+              imageUrl,
+              height: 160,
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => _imagePlaceholder(),
+            )
+                : _imagePlaceholder(),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text(name, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                    Text(
+                      priceText,
+                      style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppTheme.primaryColor),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.layers_outlined, size: 16, color: Colors.grey),
+                    const SizedBox(width: 5),
+                    Text(type, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                    const Spacer(),
+                    if (isActive)
+                      ElevatedButton(
+                        onPressed: () => _showTimePicker(court),
+                        style: ElevatedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          minimumSize: const Size(0, 36),
+                        ),
+                        child: const Text('Выбрать', style: TextStyle(fontSize: 13)),
+                      )
+                    else
+                      Text('НЕДОСТУПНО', style: TextStyle(color: Colors.grey[400], fontWeight: FontWeight.bold, fontSize: 12)),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
+  Widget _imagePlaceholder() {
+    return Container(
+      height: 160,
+      color: Colors.grey[200],
+      child: const Center(child: Icon(Icons.image_not_supported, color: Colors.grey)),
+    );
+  }
+
+  String _formatKztPerHour(String priceRaw) {
+    // "8000.00" -> "8 000 ₸/час"
+    final val = double.tryParse(priceRaw) ?? 0;
+    final intVal = val.round();
+    final s = intVal.toString();
+    final withSpaces = s.replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]} ');
+    return '$withSpaces ₸/час';
+  }
+
   void _showTimePicker(Map<String, dynamic> court) {
     String? selectedTime;
     final selectedDate = _dates[_selectedDateIndex];
-    // Исправленный ключ цены:
-    final String priceValue = (court['basePrice'] ?? court['price'] ?? '0 ₸').toString();
+
+    final priceRaw = (court['price_per_hour'] ?? '0').toString();
+    final priceText = _formatKztPerHour(priceRaw);
 
     showModalBottomSheet(
       context: context,
@@ -748,29 +974,32 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
         builder: (context, setModalState) => Container(
           height: MediaQuery.of(context).size.height * 0.75,
           decoration: BoxDecoration(
-              color: Theme.of(context).cardColor,
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(30))
+            color: Theme.of(context).cardColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
           ),
           child: Column(
             children: [
               const SizedBox(height: 12),
-              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+              ),
               const SizedBox(height: 20),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Row(
                   children: [
-                    CircleAvatar(
-                      radius: 25,
-                      backgroundImage: NetworkImage(court['image']?.toString() ?? ''),
-                      backgroundColor: Colors.grey[200],
-                    ),
+                    CircleAvatar(radius: 25, backgroundColor: Colors.grey[200], child: const Icon(Icons.sports_tennis)),
                     const SizedBox(width: 15),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(court['name']?.toString() ?? 'Корт', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                        Text('${court['type']?.toString() ?? ''} • ${selectedDate.day} ${_months[selectedDate.month - 1]}', style: const TextStyle(color: Colors.grey)),
+                        Text(
+                          '${court['court_type'] ?? ''} • ${selectedDate.day} ${_months[selectedDate.month - 1]}',
+                          style: const TextStyle(color: Colors.grey),
+                        ),
                       ],
                     ),
                   ],
@@ -794,26 +1023,22 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))]
+                  color: Theme.of(context).cardColor,
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))],
                 ),
                 child: SizedBox(
                   width: double.infinity,
                   height: 55,
                   child: ElevatedButton(
-                    onPressed: selectedTime == null ? null : () {
-                      setState(() {
-                        _userBookings.insert(0, {
-                          'court': court['name']?.toString() ?? 'Корт',
-                          'date': '${selectedDate.day} ${_months[selectedDate.month - 1].substring(0, 3)}, $selectedTime',
-                          'status': 'Оплачено',
-                          'price': priceValue
-                        });
-                      });
+                    onPressed: selectedTime == null
+                        ? null
+                        : () async {
+                      // Пока POST не делаем (нужен формат), просто перекинем на вкладку "Брони"
                       Navigator.pop(context);
                       _tabController.animateTo(1);
+                      _reloadBookings();
                     },
-                    child: Text(selectedTime == null ? 'Выберите время' : 'Забронировать за $priceValue'),
+                    child: Text(selectedTime == null ? 'Выберите время' : 'Забронировать ($priceText)'),
                   ),
                 ),
               ),
@@ -833,7 +1058,8 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
           child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
         ),
         Wrap(
-          spacing: 10, runSpacing: 10,
+          spacing: 10,
+          runSpacing: 10,
           children: slots.map((time) {
             final isSelected = time == selected;
             final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -845,117 +1071,18 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                   color: isSelected ? AppTheme.accentColor : (isDark ? Colors.white10 : Colors.grey[100]),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(time, style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? AppTheme.primaryColor : (isDark ? Colors.white : Colors.black87))),
+                child: Text(
+                  time,
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: isSelected ? AppTheme.primaryColor : (isDark ? Colors.white : Colors.black87),
+                  ),
+                ),
               ),
             );
           }).toList(),
         ),
       ],
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final activeColor = Theme.of(context).brightness == Brightness.dark ? AppTheme.accentColor : AppTheme.primaryColor;
-
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Бронирование'),
-        automaticallyImplyLeading: false,
-        bottom: TabBar(
-          controller: _tabController,
-          labelColor: activeColor,
-          indicatorColor: activeColor,
-          tabs: const [Tab(text: 'Новая бронь'), Tab(text: 'Мои брони')],
-        ),
-      ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [_buildNewBookingTab(), _buildMyBookingsTab()],
-      ),
-    );
-  }
-
-  Widget _buildNewBookingTab() {
-    return Column(
-      children: [
-        _buildDateSelector(),
-        _buildFilters(),
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-            itemCount: MockData.courts.length,
-            itemBuilder: (context, index) {
-              final court = MockData.courts[index];
-              if (_selectedFilter != 'Все' && (court['type']?.toString() ?? '') != _selectedFilter) return const SizedBox.shrink();
-              return _buildCourtCard(court);
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildMyBookingsTab() {
-    if (_userBookings.isEmpty) return const Center(child: Text('У вас пока нет активных броней', style: TextStyle(color: Colors.grey)));
-    return ListView.builder(
-      padding: const EdgeInsets.all(20),
-      itemCount: _userBookings.length,
-      itemBuilder: (context, index) {
-        final booking = _userBookings[index];
-        final isPaid = (booking['status']?.toString() ?? '') == 'Оплачено';
-        return Container(
-          margin: const EdgeInsets.only(bottom: 16),
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(22),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(color: AppTheme.primaryColor.withOpacity(0.1), shape: BoxShape.circle),
-                    child: const Icon(Icons.sports_tennis_rounded, color: AppTheme.primaryColor),
-                  ),
-                  const SizedBox(width: 15),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(booking['court']?.toString() ?? 'Корт', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                        Text(booking['date']?.toString() ?? '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: (isPaid ? Colors.green : Colors.orange).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(isPaid ? 'ОПЛАЧЕНО' : 'ОЖИДАЕТ', style: TextStyle(color: isPaid ? Colors.green : Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-              const Divider(height: 30),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text(booking['price']?.toString() ?? '0 ₸', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppTheme.primaryColor)),
-                  TextButton(
-                    onPressed: () => _cancelBooking(index),
-                    child: const Text('Отменить', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
     );
   }
 
@@ -971,6 +1098,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
           final date = _dates[index];
           final isSelected = index == _selectedDateIndex;
           final isDark = Theme.of(context).brightness == Brightness.dark;
+
           return GestureDetector(
             onTap: () => setState(() => _selectedDateIndex = index),
             child: AnimatedContainer(
@@ -985,8 +1113,18 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(date.day.toString(), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87))),
-                  Text(_months[date.month - 1].substring(0, 3), style: TextStyle(fontSize: 11, color: isSelected ? Colors.white70 : Colors.grey)),
+                  Text(
+                    date.day.toString(),
+                    style: TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 20,
+                      color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87),
+                    ),
+                  ),
+                  Text(
+                    _months[date.month - 1].substring(0, 3),
+                    style: TextStyle(fontSize: 11, color: isSelected ? Colors.white70 : Colors.grey),
+                  ),
                 ],
               ),
             ),
@@ -1002,77 +1140,71 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        children: _filters.map((f) => Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: ChoiceChip(
-            label: Text(f),
-            selected: _selectedFilter == f,
-            onSelected: (s) => setState(() => _selectedFilter = f),
-            selectedColor: AppTheme.accentColor,
-            showCheckmark: false,
-          ),
-        )).toList(),
+        children: _filters.map((f) {
+          final label = _filterLabel(f);
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(label),
+              selected: _selectedFilter == f,
+              onSelected: (_) => setState(() => _selectedFilter = f),
+              selectedColor: AppTheme.accentColor,
+              showCheckmark: false,
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 
-  Widget _buildCourtCard(Map<String, dynamic> court) {
-    bool isAvailable = (court['status']?.toString() ?? '') == 'free';
-    final String price = (court['basePrice'] ?? court['price'] ?? '0 ₸').toString();
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  String _filterLabel(String f) {
+    switch (f) {
+      case 'INDOOR':
+        return 'Indoor';
+      case 'OUTDOOR':
+        return 'Outdoor';
+      case 'PANORAMIC':
+        return 'Panorama';
+      default:
+        return f;
+    }
+  }
+}
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 20),
-      decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]
-      ),
-      child: Column(
-        children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-            child: Image.network(
-                court['image']?.toString() ?? '',
-                height: 160, width: double.infinity, fit: BoxFit.cover,
-                errorBuilder: (c, e, s) => Container(height: 160, color: Colors.grey[200], child: const Icon(Icons.image_not_supported, color: Colors.grey))
+class _ErrorState extends StatelessWidget {
+  final String title;
+  final String error;
+  final VoidCallback onRetry;
+
+  const _ErrorState({
+    required this.title,
+    required this.error,
+    required this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.wifi_off_rounded, size: 42),
+            const SizedBox(height: 10),
+            Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800), textAlign: TextAlign.center),
+            const SizedBox(height: 8),
+            Text(
+              error,
+              style: const TextStyle(fontSize: 12, color: Colors.grey),
+              textAlign: TextAlign.center,
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(child: Text(court['name']?.toString() ?? 'Корт', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
-                    Text(price, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppTheme.primaryColor)),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.layers_outlined, size: 16, color: Colors.grey),
-                    const SizedBox(width: 5),
-                    Text(court['type']?.toString() ?? '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
-                    const Spacer(),
-                    if (isAvailable)
-                      ElevatedButton(
-                          onPressed: () => _showTimePicker(court),
-                          style: ElevatedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 20),
-                              minimumSize: const Size(0, 36)
-                          ),
-                          child: const Text('Выбрать', style: TextStyle(fontSize: 13))
-                      )
-                    else
-                      Text('ЗАНЯТО', style: TextStyle(color: Colors.grey[400], fontWeight: FontWeight.bold, fontSize: 12)),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            ElevatedButton(onPressed: onRetry, child: const Text('Повторить')),
+          ],
+        ),
       ),
     );
   }
@@ -1727,6 +1859,193 @@ class RatingScreen extends StatelessWidget {
       ),
     );
   }
+}\n===== ./screens/sportbar.dart =====\n
+// lib/screens/sportbar.dart
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+class SportBarScreen extends StatefulWidget {
+  const SportBarScreen({super.key});
+
+  @override
+  State<SportBarScreen> createState() => _SportBarScreenState();
+}
+
+class _SportBarScreenState extends State<SportBarScreen> {
+  late Future<List<dynamic>> _future;
+
+  // TODO: Поставь реальный URL спортбара
+  // Пример:
+  // static const String barBaseUrl = 'https://api.yourdomain.com';
+  // или локально (ВАЖНО: IP твоего ПК в сети, не localhost):
+  // static const String barBaseUrl = 'http://192.168.1.50:8000';
+  static const String barBaseUrl = 'https://bar.example.com';
+
+  Future<List<dynamic>> fetchProducts() async {
+    final uri = Uri.parse('$barBaseUrl/api/products');
+
+    final res = await http.get(uri).timeout(const Duration(seconds: 12));
+
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      throw Exception('Sportbar API error: ${res.statusCode}');
+    }
+
+    final data = jsonDecode(res.body);
+
+    // Ожидаем либо:
+    // 1) массив: [{id,name,price,imageUrl}, ...]
+    // 2) объект: { items: [...] }
+    if (data is List) return data;
+    if (data is Map<String, dynamic> && data['items'] is List) {
+      return data['items'] as List;
+    }
+
+    throw Exception('Unexpected response format');
+  }
+
+  void _reload() {
+    setState(() {
+      _future = fetchProducts();
+    });
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _future = fetchProducts();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Спорт-бар'),
+        actions: [
+          IconButton(
+            tooltip: 'Обновить',
+            onPressed: _reload,
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: FutureBuilder<List<dynamic>>(
+        future: _future,
+        builder: (context, snap) {
+          if (snap.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
+          }
+
+          if (snap.hasError) {
+            final err = snap.error.toString();
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.wifi_off_rounded, size: 42),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Товары временно недоступны',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      err,
+                      style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      textAlign: TextAlign.center,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 14),
+                    ElevatedButton(
+                      onPressed: _reload,
+                      child: const Text('Повторить'),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          }
+
+          final items = snap.data ?? [];
+          if (items.isEmpty) {
+            return const Center(
+              child: Text(
+                'Нет товаров',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              ),
+            );
+          }
+
+          return ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: items.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 12),
+            itemBuilder: (context, i) {
+              final raw = items[i];
+
+              // На всякий: если API вернул не Map
+              if (raw is! Map) {
+                return ListTile(
+                  leading: const Icon(Icons.fastfood),
+                  title: Text('Товар #$i'),
+                  subtitle: const Text('Неверный формат данных'),
+                );
+              }
+
+              final p = Map<String, dynamic>.from(raw);
+
+              final name = (p['name'] ?? 'Товар').toString();
+              final price = (p['price'] ?? '-').toString();
+              final imageUrl = p['imageUrl']?.toString();
+
+              return Container(
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: ListTile(
+                  leading: (imageUrl != null && imageUrl.isNotEmpty)
+                      ? ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: Image.network(
+                      imageUrl,
+                      width: 56,
+                      height: 56,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox(
+                        width: 56,
+                        height: 56,
+                        child: Icon(Icons.fastfood),
+                      ),
+                    ),
+                  )
+                      : const SizedBox(width: 56, height: 56, child: Icon(Icons.fastfood)),
+                  title: Text(
+                    name,
+                    style: const TextStyle(fontWeight: FontWeight.w700),
+                  ),
+                  subtitle: Text('$price ₸'),
+                  trailing: ElevatedButton(
+                    onPressed: () {
+                      // TODO: корзина/заказ
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Добавлено в корзину: $name')),
+                      );
+                    },
+                    child: const Text('В корзину'),
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
 }\n===== ./screens/otp_screen.dart =====\n
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -1778,7 +2097,9 @@ class _OtpScreenState extends State<OtpScreen> {
     final textColor = isDark ? Colors.white : AppTheme.textPrimary;
 
     return Scaffold(
-      appBar: AppBar(leading: const BackButton()),
+      appBar: AppBar(
+        automaticallyImplyLeading: false,
+      ),
       body: Padding(
         padding: const EdgeInsets.all(30.0),
         child: Column(
@@ -1787,7 +2108,6 @@ class _OtpScreenState extends State<OtpScreen> {
             const SizedBox(height: 10),
             Text('Мы отправили код на +7 ${widget.phoneNumber}', textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
             const SizedBox(height: 40),
-
             // Поля ввода OTP
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1846,10 +2166,25 @@ class _OtpScreenState extends State<OtpScreen> {
       ),
     );
   }
+}\n===== ./screens/auth_gate.dart =====\n
+import 'package:flutter/material.dart';
+import 'auth_screen.dart';
+import 'main_wrapper.dart';
+
+class AuthGate extends StatelessWidget {
+  final bool isLoggedIn; // пока мок
+
+  const AuthGate({super.key, required this.isLoggedIn});
+
+  @override
+  Widget build(BuildContext context) {
+    return isLoggedIn ? const MainWrapper() : const AuthScreen();
+  }
 }\n===== ./screens/home_screen.dart =====\n
 import 'package:flutter/material.dart';
 import '../data/mock_data.dart';
 import '../theme/app_theme.dart';
+import '../screens/sportbar.dart';
 
 class HomeScreen extends StatelessWidget {
   final VoidCallback? onGoToBooking;
@@ -2066,32 +2401,85 @@ class HomeScreen extends StatelessWidget {
   // 2.3 Дополнительные услуги
   Widget _buildAdditionalServices(bool isDark, ThemeData theme) {
     final services = [
-      {'name': 'Фитнес-зона', 'icon': Icons.fitness_center_rounded, 'color': Colors.orange},
-      {'name': 'Спорт-бар', 'icon': Icons.local_bar_rounded, 'color': Colors.blue},
-      {'name': 'Восстановление', 'icon': Icons.spa_rounded, 'color': Colors.teal},
+      {
+        'name': 'Фитнес-зона',
+        'icon': Icons.fitness_center_rounded,
+        'color': Colors.orange,
+        'onTap': () {}, // позже откроем Fitness screen
+      },
+      {
+        'name': 'Спорт-бар',
+        'icon': Icons.local_bar_rounded,
+        'color': Colors.blue,
+        'onTap': () {
+          // ВАЖНО: context нужен, поэтому onTap будет вызываться внутри build через Builder ниже
+        },
+      },
+      {
+        'name': 'Восстановление',
+        'icon': Icons.spa_rounded,
+        'color': Colors.teal,
+        'onTap': () {}, // позже откроем Recovery screen
+      },
     ];
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: services.map((service) {
-        return Column(
-          children: [
-            Container(
-              width: 100,
-              padding: const EdgeInsets.symmetric(vertical: 20),
-              decoration: BoxDecoration(
-                color: theme.cardColor,
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))],
+        return Builder(
+          builder: (context) {
+            final name = service['name'] as String;
+
+            VoidCallback? onTap;
+            if (name == 'Спорт-бар') {
+              onTap = () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (_) => const SportBarScreen()),
+                );
+              };
+            } else {
+              onTap = service['onTap'] as VoidCallback?;
+            }
+
+            return InkWell(
+              borderRadius: BorderRadius.circular(20),
+              onTap: onTap,
+              child: Column(
+                children: [
+                  Container(
+                    width: 100,
+                    padding: const EdgeInsets.symmetric(vertical: 20),
+                    decoration: BoxDecoration(
+                      color: theme.cardColor,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.03),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        )
+                      ],
+                    ),
+                    child: Icon(
+                      service['icon'] as IconData,
+                      color: service['color'] as Color,
+                      size: 30,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: isDark ? Colors.white70 : AppTheme.textPrimary,
+                    ),
+                  )
+                ],
               ),
-              child: Icon(service['icon'] as IconData, color: service['color'] as Color, size: 30),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              service['name'] as String,
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: isDark ? Colors.white70 : AppTheme.textPrimary),
-            )
-          ],
+            );
+          },
         );
       }).toList(),
     );
@@ -2234,6 +2622,408 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+}\n===== ./screens/booking_screenold.dart =====\n
+import 'package:flutter/material.dart';
+import '../data/mock_data.dart';
+import '../theme/app_theme.dart';
+
+class BookingScreen extends StatefulWidget {
+  const BookingScreen({super.key});
+
+  @override
+  State<BookingScreen> createState() => _BookingScreenState();
+}
+
+class _BookingScreenState extends State<BookingScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+  int _selectedDateIndex = 0;
+  String _selectedFilter = 'Все';
+
+  late List<Map<String, dynamic>> _userBookings;
+
+  final List<String> _morningSlots = ['07:00', '08:00', '09:00', '10:00', '11:00'];
+  final List<String> _daySlots = ['12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+  final List<String> _eveningSlots = ['18:00', '19:00', '20:00', '21:00', '22:00'];
+
+  final List<DateTime> _dates = List.generate(14, (index) => DateTime.now().add(Duration(days: index)));
+  final List<String> _filters = ['Все', 'Hard', 'Clay', 'Panorama', 'Grass'];
+  final List<String> _months = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь', 'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+    _userBookings = List.from(MockData.myBookings);
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    super.dispose();
+  }
+
+  void _cancelBooking(int index) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Отменить бронь?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Назад')),
+          ElevatedButton(
+            onPressed: () {
+              setState(() => _userBookings.removeAt(index));
+              Navigator.pop(context);
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('Да, отменить'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTimePicker(Map<String, dynamic> court) {
+    String? selectedTime;
+    final selectedDate = _dates[_selectedDateIndex];
+    // Исправленный ключ цены:
+    final String priceValue = (court['basePrice'] ?? court['price'] ?? '0 ₸').toString();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          height: MediaQuery.of(context).size.height * 0.75,
+          decoration: BoxDecoration(
+              color: Theme.of(context).cardColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(30))
+          ),
+          child: Column(
+            children: [
+              const SizedBox(height: 12),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 20),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 25,
+                      backgroundImage: NetworkImage(court['image']?.toString() ?? ''),
+                      backgroundColor: Colors.grey[200],
+                    ),
+                    const SizedBox(width: 15),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(court['name']?.toString() ?? 'Корт', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                        Text('${court['type']?.toString() ?? ''} • ${selectedDate.day} ${_months[selectedDate.month - 1]}', style: const TextStyle(color: Colors.grey)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 30),
+              Expanded(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Column(
+                    children: [
+                      _buildTimeSection('Утро', _morningSlots, selectedTime, (t) => setModalState(() => selectedTime = t)),
+                      const SizedBox(height: 20),
+                      _buildTimeSection('День', _daySlots, selectedTime, (t) => setModalState(() => selectedTime = t)),
+                      const SizedBox(height: 20),
+                      _buildTimeSection('Вечер', _eveningSlots, selectedTime, (t) => setModalState(() => selectedTime = t)),
+                    ],
+                  ),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                    color: Theme.of(context).cardColor,
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, -5))]
+                ),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 55,
+                  child: ElevatedButton(
+                    onPressed: selectedTime == null ? null : () {
+                      setState(() {
+                        _userBookings.insert(0, {
+                          'court': court['name']?.toString() ?? 'Корт',
+                          'date': '${selectedDate.day} ${_months[selectedDate.month - 1].substring(0, 3)}, $selectedTime',
+                          'status': 'Оплачено',
+                          'price': priceValue
+                        });
+                      });
+                      Navigator.pop(context);
+                      _tabController.animateTo(1);
+                    },
+                    child: Text(selectedTime == null ? 'Выберите время' : 'Забронировать за $priceValue'),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTimeSection(String title, List<String> slots, String? selected, Function(String) onSelect) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        ),
+        Wrap(
+          spacing: 10, runSpacing: 10,
+          children: slots.map((time) {
+            final isSelected = time == selected;
+            final isDark = Theme.of(context).brightness == Brightness.dark;
+            return GestureDetector(
+              onTap: () => onSelect(time),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isSelected ? AppTheme.accentColor : (isDark ? Colors.white10 : Colors.grey[100]),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(time, style: TextStyle(fontWeight: FontWeight.bold, color: isSelected ? AppTheme.primaryColor : (isDark ? Colors.white : Colors.black87))),
+              ),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final activeColor = isDark ? AppTheme.accentColor : AppTheme.primaryColor;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Бронирование'),
+        automaticallyImplyLeading: false,
+        bottom: TabBar(
+          controller: _tabController,
+          labelColor: activeColor,
+          indicatorColor: activeColor,
+          tabs: const [Tab(text: 'Новая бронь'), Tab(text: 'Мои брони')],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [_buildNewBookingTab(), _buildMyBookingsTab()],
+      ),
+    );
+  }
+
+  Widget _buildNewBookingTab() {
+    return Column(
+      children: [
+        _buildDateSelector(),
+        _buildFilters(),
+        Expanded(
+          child: ListView.builder(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            itemCount: MockData.courts.length,
+            itemBuilder: (context, index) {
+              final court = MockData.courts[index];
+              if (_selectedFilter != 'Все' && (court['type']?.toString() ?? '') != _selectedFilter) return const SizedBox.shrink();
+              return _buildCourtCard(court);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMyBookingsTab() {
+    if (_userBookings.isEmpty) return const Center(child: Text('У вас пока нет активных броней', style: TextStyle(color: Colors.grey)));
+    return ListView.builder(
+      padding: const EdgeInsets.all(20),
+      itemCount: _userBookings.length,
+      itemBuilder: (context, index) {
+        final booking = _userBookings[index];
+        final isPaid = (booking['status']?.toString() ?? '') == 'Оплачено';
+        return Container(
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.all(18),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+          ),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: AppTheme.primaryColor.withOpacity(0.1), shape: BoxShape.circle),
+                    child: const Icon(Icons.sports_tennis_rounded, color: AppTheme.primaryColor),
+                  ),
+                  const SizedBox(width: 15),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(booking['court']?.toString() ?? 'Корт', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                        Text(booking['date']?.toString() ?? '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (isPaid ? Colors.green : Colors.orange).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(isPaid ? 'ОПЛАЧЕНО' : 'ОЖИДАЕТ', style: TextStyle(color: isPaid ? Colors.green : Colors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              const Divider(height: 30),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(booking['price']?.toString() ?? '0 ₸', style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppTheme.primaryColor)),
+                  TextButton(
+                    onPressed: () => _cancelBooking(index),
+                    child: const Text('Отменить', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDateSelector() {
+    return Container(
+      height: 100,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        itemCount: _dates.length,
+        itemBuilder: (context, index) {
+          final date = _dates[index];
+          final isSelected = index == _selectedDateIndex;
+          final isDark = Theme.of(context).brightness == Brightness.dark;
+          return GestureDetector(
+            onTap: () => setState(() => _selectedDateIndex = index),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 65,
+              margin: const EdgeInsets.symmetric(horizontal: 6),
+              decoration: BoxDecoration(
+                color: isSelected ? AppTheme.primaryColor : Colors.transparent,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: isSelected ? AppTheme.primaryColor : Colors.grey.withOpacity(0.2)),
+              ),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(date.day.toString(), style: TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: isSelected ? Colors.white : (isDark ? Colors.white : Colors.black87))),
+                  Text(_months[date.month - 1].substring(0, 3), style: TextStyle(fontSize: 11, color: isSelected ? Colors.white70 : Colors.grey)),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildFilters() {
+    return SizedBox(
+      height: 50,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: _filters.map((f) => Padding(
+          padding: const EdgeInsets.only(right: 8),
+          child: ChoiceChip(
+            label: Text(f),
+            selected: _selectedFilter == f,
+            onSelected: (s) => setState(() => _selectedFilter = f),
+            selectedColor: AppTheme.accentColor,
+            showCheckmark: false,
+          ),
+        )).toList(),
+      ),
+    );
+  }
+
+  Widget _buildCourtCard(Map<String, dynamic> court) {
+    bool isAvailable = (court['status']?.toString() ?? '') == 'free';
+    final String price = (court['basePrice'] ?? court['price'] ?? '0 ₸').toString();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]
+      ),
+      child: Column(
+        children: [
+          ClipRRect(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            child: Image.network(
+                court['image']?.toString() ?? '',
+                height: 160, width: double.infinity, fit: BoxFit.cover,
+                errorBuilder: (c, e, s) => Container(height: 160, color: Colors.grey[200], child: const Icon(Icons.image_not_supported, color: Colors.grey))
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(child: Text(court['name']?.toString() ?? 'Корт', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold))),
+                    Text(price, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppTheme.primaryColor)),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.layers_outlined, size: 16, color: Colors.grey),
+                    const SizedBox(width: 5),
+                    Text(court['type']?.toString() ?? '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                    const Spacer(),
+                    if (isAvailable)
+                      ElevatedButton(
+                          onPressed: () => _showTimePicker(court),
+                          style: ElevatedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 20),
+                              minimumSize: const Size(0, 36)
+                          ),
+                          child: const Text('Выбрать', style: TextStyle(fontSize: 13))
+                      )
+                    else
+                      Text('ЗАНЯТО', style: TextStyle(color: Colors.grey[400], fontWeight: FontWeight.bold, fontSize: 12)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }\n===== ./screens/auth_screen.dart =====\n
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -2334,11 +3124,11 @@ class _AuthScreenState extends State<AuthScreen> {
                   height: 60,
                   child: ElevatedButton(
                     onPressed: () {
-                      String rawPhone = _phoneController.text.replaceAll(' ', '');
+                      final rawPhone = _phoneController.text.replaceAll(' ', '');
                       if (rawPhone.length == 10) {
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (context) => OtpScreen(phoneNumber: _phoneController.text),
+                            builder: (context) => OtpScreen(phoneNumber: rawPhone),
                           ),
                         );
                       } else {
@@ -2384,20 +3174,12 @@ class KzPhoneFormatter extends TextInputFormatter {
   }
 }\n===== ./main.dart =====\n
 import 'package:flutter/material.dart';
-import 'package:flutter_native_splash/flutter_native_splash.dart'; // 1. Импорт
 import 'theme/app_theme.dart';
-import 'screens/main_wrapper.dart';
-
-
+import 'screens/auth_gate.dart';
 
 
 void main() {
-  // 2. Инициализация привязки
-  WidgetsBinding widgetsBinding = WidgetsFlutterBinding.ensureInitialized();
-
-  // 3. ЗАМОРАЖИВАЕМ сплэш-экран (он не исчезнет сам)
-  FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const TennisApp());
 }
 
@@ -2415,7 +3197,7 @@ class TennisApp extends StatelessWidget {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: currentMode,
-          home: const MainWrapper(),
+          home: const AuthGate(isLoggedIn: false),
         );
       },
     );

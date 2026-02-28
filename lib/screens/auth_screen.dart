@@ -99,9 +99,10 @@ class _AuthScreenState extends State<AuthScreen> {
                     onPressed: () {
                       final rawPhone = _phoneController.text.replaceAll(' ', '');
                       if (rawPhone.length == 10) {
+                        final e164Phone = '+7$rawPhone';
                         Navigator.of(context).push(
                           MaterialPageRoute(
-                            builder: (context) => OtpScreen(phoneNumber: rawPhone),
+                            builder: (context) => OtpScreen(phoneNumber: e164Phone),
                           ),
                         );
                       } else {

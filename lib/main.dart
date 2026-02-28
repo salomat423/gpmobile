@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'core/di/app_scope.dart';
 import 'theme/app_theme.dart';
 import 'screens/auth_gate.dart';
 
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  AppScope.instance.bootstrapAuth();
   runApp(const TennisApp());
 }
 
@@ -22,7 +24,7 @@ class TennisApp extends StatelessWidget {
           theme: AppTheme.lightTheme,
           darkTheme: AppTheme.darkTheme,
           themeMode: currentMode,
-          home: const AuthGate(isLoggedIn: false),
+          home: const AuthGate(),
         );
       },
     );

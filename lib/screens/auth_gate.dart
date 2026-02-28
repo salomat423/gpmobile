@@ -1,14 +1,21 @@
 import 'package:flutter/material.dart';
+import '../core/di/app_scope.dart';
 import 'auth_screen.dart';
 import 'main_wrapper.dart';
 
 class AuthGate extends StatelessWidget {
-  final bool isLoggedIn; // пока мок
-
-  const AuthGate({super.key, required this.isLoggedIn});
+  const AuthGate({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return isLoggedIn ? const MainWrapper() : const AuthScreen();
+    return ValueListenableBuilder<AuthState>(
+      valueListenable: AppScope.instance.authState,
+      builder: (context, state, _) {
+        if (state == AuthState.unknown) {
+          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+        }
+        return state == AuthState.authenticated ? const MainWrapper() : const AuthScreen();
+      },
+    );
   }
 }
