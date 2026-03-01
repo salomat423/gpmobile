@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import '../core/di/app_scope.dart';
 import '../theme/app_theme.dart';
 import '../screens/sportbar.dart';
@@ -548,20 +549,18 @@ class _HomeBody extends StatelessWidget {
               ),
               const SizedBox(height: 20),
               Container(
-                width: 200, height: 200,
+                width: 220, height: 220,
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16)),
-                child: Center(
-                  child: qrContent.isEmpty
-                      ? const Icon(Icons.qr_code_2_rounded, size: 140, color: AppTheme.primaryColor)
-                      : Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.qr_code_2_rounded, size: 120, color: AppTheme.primaryColor),
-                            const SizedBox(height: 4),
-                            Text(qrContent, style: const TextStyle(fontSize: 10, color: Colors.grey), maxLines: 2, overflow: TextOverflow.ellipsis),
-                          ],
-                        ),
-                ),
+                child: qrContent.isEmpty
+                    ? const Center(child: Icon(Icons.qr_code_2_rounded, size: 140, color: AppTheme.primaryColor))
+                    : QrImageView(
+                        data: qrContent,
+                        version: QrVersions.auto,
+                        size: 196,
+                        eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.circle, color: AppTheme.primaryColor),
+                        dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.circle, color: AppTheme.primaryColor),
+                      ),
               ),
               const SizedBox(height: 16),
               Container(

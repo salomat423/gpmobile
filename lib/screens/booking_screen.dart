@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../core/di/app_scope.dart';
@@ -128,49 +129,40 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                         Row(
                           children: [
                             Expanded(
-                              child: _outlinedSelect(
-                                icon: Icons.calendar_today,
-                                label: '${selectedDate.day}.${selectedDate.month.toString().padLeft(2, '0')}.${selectedDate.year}',
-                                onTap: () async {
-                                  final picked = await showDatePicker(
-                                    context: ctx,
-                                    initialDate: selectedDate,
-                                    firstDate: DateTime.now(),
-                                    lastDate: DateTime.now().add(const Duration(days: 60)),
-                                  );
-                                  if (picked != null) setSheetState(() => selectedDate = picked);
-                                },
+                              child: _datePickerTile(
+                                context: ctx,
+                                icon: Icons.calendar_today_rounded,
+                                label: _formatDate(selectedDate),
+                                onTap: () => _showModernDatePicker(ctx, selectedDate, (d) => setSheetState(() => selectedDate = d)),
                               ),
                             ),
                             const SizedBox(width: 10),
                             Expanded(
-                              child: _outlinedSelect(
-                                icon: Icons.access_time,
+                              child: _datePickerTile(
+                                context: ctx,
+                                icon: Icons.schedule_rounded,
                                 label: '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
-                                onTap: () async {
-                                  final picked = await showTimePicker(context: ctx, initialTime: selectedTime);
-                                  if (picked != null) setSheetState(() => selectedTime = picked);
-                                },
+                                onTap: () => _showModernTimePicker(ctx, selectedTime, (t) => setSheetState(() => selectedTime = t)),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        Row(
+                        const SizedBox(height: 16),
+                        const Text('Длительность', style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
                           children: [
-                            const Text('Длительность: ', style: TextStyle(fontWeight: FontWeight.w600)),
                             ChoiceChip(
                               label: const Text('60 мин'),
                               selected: duration == 60,
                               onSelected: (_) => setSheetState(() => duration = 60),
                             ),
-                            const SizedBox(width: 8),
                             ChoiceChip(
                               label: const Text('90 мин'),
                               selected: duration == 90,
                               onSelected: (_) => setSheetState(() => duration = 90),
                             ),
-                            const SizedBox(width: 8),
                             ChoiceChip(
                               label: const Text('120 мин'),
                               selected: duration == 120,
@@ -582,14 +574,116 @@ Widget _courtPlaceholder(bool isDark) {
   );
 }
 
-Widget _outlinedSelect({required IconData icon, required String label, required VoidCallback onTap}) {
-  return OutlinedButton.icon(
-    onPressed: onTap,
-    icon: Icon(icon, size: 18),
-    label: Text(label),
-    style: OutlinedButton.styleFrom(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+Widget _datePickerTile({
+  required BuildContext context,
+  required IconData icon,
+  required String label,
+  required VoidCallback onTap,
+}) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return GestureDetector(
+    onTap: onTap,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.07) : Colors.grey.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: AppTheme.primaryColor),
+          const SizedBox(width: 10),
+          Expanded(child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15))),
+          Icon(Icons.keyboard_arrow_down_rounded, size: 20, color: Colors.grey.withValues(alpha: 0.6)),
+        ],
+      ),
+    ),
+  );
+}
+
+String _formatDate(DateTime d) {
+  const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+  return '${d.day} ${months[d.month - 1]} ${d.year}';
+}
+
+void _showModernDatePicker(BuildContext ctx, DateTime current, ValueChanged<DateTime> onPicked) {
+  DateTime temp = current;
+  showModalBottomSheet(
+    context: ctx,
+    backgroundColor: Colors.transparent,
+    builder: (sheetCtx) => Container(
+      height: 320,
+      decoration: BoxDecoration(
+        color: Theme.of(sheetCtx).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Выберите дату', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                TextButton(
+                  onPressed: () { onPicked(temp); Navigator.pop(sheetCtx); },
+                  child: const Text('Готово', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: CupertinoDatePicker(
+              mode: CupertinoDatePickerMode.date,
+              initialDateTime: current,
+              minimumDate: DateTime.now().subtract(const Duration(days: 1)),
+              maximumDate: DateTime.now().add(const Duration(days: 60)),
+              onDateTimeChanged: (d) => temp = d,
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+void _showModernTimePicker(BuildContext ctx, TimeOfDay current, ValueChanged<TimeOfDay> onPicked) {
+  DateTime temp = DateTime(2025, 1, 1, current.hour, current.minute);
+  showModalBottomSheet(
+    context: ctx,
+    backgroundColor: Colors.transparent,
+    builder: (sheetCtx) => Container(
+      height: 320,
+      decoration: BoxDecoration(
+        color: Theme.of(sheetCtx).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 8, 0),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Выберите время', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+                TextButton(
+                  onPressed: () { onPicked(TimeOfDay(hour: temp.hour, minute: temp.minute)); Navigator.pop(sheetCtx); },
+                  child: const Text('Готово', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: CupertinoDatePicker(
+              mode: CupertinoDatePickerMode.time,
+              initialDateTime: temp,
+              use24hFormat: true,
+              minuteInterval: 15,
+              onDateTimeChanged: (d) => temp = d,
+            ),
+          ),
+        ],
+      ),
     ),
   );
 }
