@@ -37,7 +37,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     _membershipsFuture = AppScope.instance.membershipRepository.myMemberships();
   }
 
-  void _openCourtSheet(Map<String, dynamic> court) {
+  Future<void> _openCourtSheet(Map<String, dynamic> court) async {
     final courtId = (court['id'] as num?)?.toInt();
     if (courtId == null) return;
 
@@ -51,9 +51,27 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     DateTime selectedDate = DateTime.now();
     TimeOfDay selectedTime = TimeOfDay(hour: DateTime.now().hour + 1, minute: 0);
     int duration = 60;
+    int? selectedCoachId;
     String paymentMethod = 'KASPI';
+    final promoCtrl = TextEditingController();
 
-    showModalBottomSheet(
+    Future<List<Map<String, dynamic>>> loadCoaches() {
+      final slot = DateTime(
+        selectedDate.year,
+        selectedDate.month,
+        selectedDate.day,
+        selectedTime.hour,
+        selectedTime.minute,
+      ).toUtc();
+      return AppScope.instance.bookingRepository.availableCoaches(
+        dateTimeIso: slot.toIso8601String(),
+        duration: duration,
+      );
+    }
+
+    Future<List<Map<String, dynamic>>> coachesFuture = loadCoaches();
+
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -133,7 +151,15 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                                 context: ctx,
                                 icon: Icons.calendar_today_rounded,
                                 label: _formatDate(selectedDate),
-                                onTap: () => _showModernDatePicker(ctx, selectedDate, (d) => setSheetState(() => selectedDate = d)),
+                                onTap: () => _showModernDatePicker(
+                                  ctx,
+                                  selectedDate,
+                                  (d) => setSheetState(() {
+                                    selectedDate = d;
+                                    selectedCoachId = null;
+                                    coachesFuture = loadCoaches();
+                                  }),
+                                ),
                               ),
                             ),
                             const SizedBox(width: 10),
@@ -142,7 +168,15 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                                 context: ctx,
                                 icon: Icons.schedule_rounded,
                                 label: '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}',
-                                onTap: () => _showModernTimePicker(ctx, selectedTime, (t) => setSheetState(() => selectedTime = t)),
+                                onTap: () => _showModernTimePicker(
+                                  ctx,
+                                  selectedTime,
+                                  (t) => setSheetState(() {
+                                    selectedTime = t;
+                                    selectedCoachId = null;
+                                    coachesFuture = loadCoaches();
+                                  }),
+                                ),
                               ),
                             ),
                           ],
@@ -156,17 +190,120 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                             ChoiceChip(
                               label: const Text('60 мин'),
                               selected: duration == 60,
-                              onSelected: (_) => setSheetState(() => duration = 60),
+                              onSelected: (_) => setSheetState(() {
+                                duration = 60;
+                                selectedCoachId = null;
+                                coachesFuture = loadCoaches();
+                              }),
                             ),
                             ChoiceChip(
                               label: const Text('90 мин'),
                               selected: duration == 90,
-                              onSelected: (_) => setSheetState(() => duration = 90),
+                              onSelected: (_) => setSheetState(() {
+                                duration = 90;
+                                selectedCoachId = null;
+                                coachesFuture = loadCoaches();
+                              }),
                             ),
                             ChoiceChip(
                               label: const Text('120 мин'),
                               selected: duration == 120,
-                              onSelected: (_) => setSheetState(() => duration = 120),
+                              onSelected: (_) => setSheetState(() {
+                                duration = 120;
+                                selectedCoachId = null;
+                                coachesFuture = loadCoaches();
+                              }),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        FutureBuilder<List<Map<String, dynamic>>>(
+                          future: coachesFuture,
+                          builder: (ctx, snap) {
+                            if (snap.connectionState == ConnectionState.waiting) {
+                              return const LinearProgressIndicator();
+                            }
+                            if (snap.hasError) {
+                              return const Text(
+                                'Не удалось загрузить тренеров для этого слота',
+                                style: TextStyle(color: Colors.grey, fontSize: 12),
+                              );
+                            }
+                            final coaches = snap.data ?? const [];
+                            if (coaches.isEmpty) {
+                              return const Text(
+                                'Свободных тренеров нет (можно бронировать без тренера)',
+                                style: TextStyle(color: Colors.grey, fontSize: 12),
+                              );
+                            }
+                            return DropdownButtonFormField<int>(
+                              initialValue: selectedCoachId,
+                              decoration: InputDecoration(
+                                labelText: 'Тренер (опционально)',
+                                filled: true,
+                                fillColor: Colors.grey.withValues(alpha: 0.08),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(14),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                              items: coaches.map((c) {
+                                final id = (c['id'] as num?)?.toInt();
+                                if (id == null) return null;
+                                final name = (c['full_name'] ?? c['username'] ?? 'Тренер').toString();
+                                final price = (c['coach_price'] ?? '').toString();
+                                final label = price.isEmpty || price == '0.00' ? name : '$name • $price тг';
+                                return DropdownMenuItem<int>(
+                                  value: id,
+                                  child: Text(label),
+                                );
+                              }).whereType<DropdownMenuItem<int>>().toList(),
+                              onChanged: (v) => setSheetState(() => selectedCoachId = v),
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: promoCtrl,
+                                textCapitalization: TextCapitalization.characters,
+                                decoration: InputDecoration(
+                                  labelText: 'Промокод (опционально)',
+                                  filled: true,
+                                  fillColor: Colors.grey.withValues(alpha: 0.08),
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(14),
+                                    borderSide: BorderSide.none,
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            OutlinedButton(
+                              onPressed: () async {
+                                final code = promoCtrl.text.trim();
+                                if (code.isEmpty) return;
+                                try {
+                                  final result = await AppScope.instance.secondaryRepository.validatePromo(code);
+                                  if (!ctx.mounted) return;
+                                  final valid = result['valid'] == true;
+                                  final message = valid
+                                      ? 'Промокод активен: ${result['title'] ?? code}'
+                                      : (result['error'] ?? 'Промокод недействителен').toString();
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(
+                                      content: Text(message),
+                                      backgroundColor: valid ? Colors.green : Colors.redAccent,
+                                    ),
+                                  );
+                                } catch (e) {
+                                  if (!ctx.mounted) return;
+                                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.toString())));
+                                }
+                              },
+                              child: const Text('Проверить'),
                             ),
                           ],
                         ),
@@ -192,7 +329,18 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                           width: double.infinity,
                           height: 54,
                           child: ElevatedButton(
-                            onPressed: isActive ? () => _bookCourt(ctx, courtId, selectedDate, selectedTime, duration, paymentMethod) : null,
+                            onPressed: isActive
+                                ? () => _bookCourt(
+                                      ctx,
+                                      courtId,
+                                      selectedDate,
+                                      selectedTime,
+                                      duration,
+                                      paymentMethod,
+                                      coachId: selectedCoachId,
+                                      promoCode: promoCtrl.text.trim(),
+                                    )
+                                : null,
                             child: const Text('Забронировать', style: TextStyle(fontSize: 16)),
                           ),
                         ),
@@ -206,24 +354,52 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
         },
       ),
     );
+    promoCtrl.dispose();
   }
 
-  Future<void> _bookCourt(BuildContext ctx, int courtId, DateTime date, TimeOfDay time, int duration, String paymentMethod) async {
+  Future<void> _bookCourt(
+    BuildContext ctx,
+    int courtId,
+    DateTime date,
+    TimeOfDay time,
+    int duration,
+    String paymentMethod, {
+    int? coachId,
+    String? promoCode,
+  }) async {
     final start = DateTime(date.year, date.month, date.day, time.hour, time.minute).toUtc();
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(ctx);
-    final payload = {
+    final payload = <String, dynamic>{
       'court': courtId,
       'start_time': start.toIso8601String(),
       'duration': duration,
       'payment_method': paymentMethod,
     };
+    if (coachId != null) payload['coach'] = coachId;
+    final promo = (promoCode ?? '').trim();
+    if (promo.isNotEmpty) payload['promo_code'] = promo;
     try {
-      final preview = await AppScope.instance.bookingRepository.pricePreview({
+      final availability = await AppScope.instance.bookingRepository.checkAvailability(
+        courtId: courtId,
+        dateIso: _dateOnlyIso(date),
+      );
+      if ((availability['is_holiday'] == true)) {
+        final reason = (availability['reason'] ?? 'Корт недоступен в выбранную дату').toString();
+        throw Exception(reason);
+      }
+      final busySlots = (availability['busy_slots'] as List?) ?? const [];
+      if (_isRequestedSlotBusy(time: time, duration: duration, busySlots: busySlots)) {
+        throw Exception('Этот временной слот уже занят. Выберите другое время.');
+      }
+
+      final previewPayload = <String, dynamic>{
         'court_id': courtId,
         'start_time': payload['start_time'],
         'duration': duration,
-      });
+      };
+      if (coachId != null) previewPayload['coach_id'] = coachId;
+      final preview = await AppScope.instance.bookingRepository.pricePreview(previewPayload);
       if (!mounted) return;
       final ok = await showDialog<bool>(
         context: context,
@@ -256,6 +432,40 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
     }
+  }
+
+  String _dateOnlyIso(DateTime date) {
+    final y = date.year.toString().padLeft(4, '0');
+    final m = date.month.toString().padLeft(2, '0');
+    final d = date.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  bool _isRequestedSlotBusy({
+    required TimeOfDay time,
+    required int duration,
+    required List busySlots,
+  }) {
+    final selectedStart = time.hour * 60 + time.minute;
+    final selectedEnd = selectedStart + duration;
+    for (final raw in busySlots) {
+      if (raw is! Map) continue;
+      final slot = Map<String, dynamic>.from(raw);
+      final start = _parseSlotMinutes((slot['start'] ?? '').toString());
+      final end = _parseSlotMinutes((slot['end'] ?? '').toString());
+      if (start == null || end == null) continue;
+      if (selectedStart < end && selectedEnd > start) return true;
+    }
+    return false;
+  }
+
+  int? _parseSlotMinutes(String hhmm) {
+    final parts = hhmm.split(':');
+    if (parts.length != 2) return null;
+    final h = int.tryParse(parts[0]);
+    final m = int.tryParse(parts[1]);
+    if (h == null || m == null) return null;
+    return h * 60 + m;
   }
 
   Future<void> _cancelBooking(Map<String, dynamic> booking) async {

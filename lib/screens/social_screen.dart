@@ -43,7 +43,7 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
   }
 
   void _reloadAll() {
-    _openLobbiesFuture = AppScope.instance.socialRepository.listLobbies(status: 'OPEN');
+    _openLobbiesFuture = AppScope.instance.socialRepository.listLobbies();
     _myLobbiesFuture = AppScope.instance.socialRepository.myLobbies();
     _friendsFuture = AppScope.instance.socialRepository.friends();
     _incomingFuture = AppScope.instance.socialRepository.incomingRequests();
@@ -249,14 +249,14 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
 
   // ─── Lobby creation sheet ───
 
-  void _showCreateLobbySheet() {
+  Future<void> _showCreateLobbySheet() async {
     final titleCtrl = TextEditingController();
+    final commentCtrl = TextEditingController();
+    final eloMinCtrl = TextEditingController();
+    final eloMaxCtrl = TextEditingController();
     String format = 'DOUBLE';
-    int? selectedCourtId;
-    DateTime selectedDate = DateTime.now();
-    TimeOfDay selectedTime = const TimeOfDay(hour: 18, minute: 0);
 
-    showModalBottomSheet(
+    await showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
@@ -291,25 +291,54 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
                   ChoiceChip(label: const Text('1v1 (Одиночный)'), selected: format == 'SINGLE', onSelected: (_) => setModalState(() => format = 'SINGLE')),
                 ]),
                 const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(child: _pickerTile(ctx: ctx, icon: Icons.calendar_today_rounded, label: _fmtDate(selectedDate), onTap: () => _showDateSheet(ctx, selectedDate, (d) => setModalState(() => selectedDate = d)))),
-                  const SizedBox(width: 8),
-                  Expanded(child: _pickerTile(ctx: ctx, icon: Icons.schedule_rounded, label: '${selectedTime.hour.toString().padLeft(2, '0')}:${selectedTime.minute.toString().padLeft(2, '0')}', onTap: () => _showTimeSheet(ctx, selectedTime, (t) => setModalState(() => selectedTime = t)))),
-                ]),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: eloMinCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'ELO min (опц.)',
+                          filled: true,
+                          fillColor: Colors.grey.withValues(alpha: 0.1),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: eloMaxCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          labelText: 'ELO max (опц.)',
+                          filled: true,
+                          fillColor: Colors.grey.withValues(alpha: 0.1),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(14),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 12),
-                FutureBuilder<List<Map<String, dynamic>>>(
-                  future: AppScope.instance.bookingRepository.courts(),
-                  builder: (ctx, snap) {
-                    if (snap.connectionState == ConnectionState.waiting) return const LinearProgressIndicator();
-                    final courts = snap.data ?? [];
-                    if (courts.isEmpty) return const Text('Кортов нет');
-                    return DropdownButtonFormField<int>(
-                      initialValue: selectedCourtId,
-                      decoration: InputDecoration(labelText: 'Корт', filled: true, fillColor: Colors.grey.withValues(alpha: 0.1), border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none)),
-                      items: courts.map((c) { final id = (c['id'] as num).toInt(); return DropdownMenuItem<int>(value: id, child: Text((c['name'] ?? 'Корт $id').toString())); }).toList(),
-                      onChanged: (v) => setModalState(() => selectedCourtId = v),
-                    );
-                  },
+                TextField(
+                  controller: commentCtrl,
+                  maxLines: 2,
+                  decoration: InputDecoration(
+                    hintText: 'Комментарий (опционально)',
+                    filled: true,
+                    fillColor: Colors.grey.withValues(alpha: 0.1),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
                 ),
                 const SizedBox(height: 16),
                 Text(format == 'DOUBLE' ? 'Игроков: 4 (включая вас)' : 'Игроков: 2 (включая вас)', style: const TextStyle(color: Colors.grey)),
@@ -321,7 +350,18 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
                       if (titleCtrl.text.trim().isEmpty) return;
                       Navigator.of(ctx).pop();
                       try {
-                        final lobby = await AppScope.instance.socialRepository.createLobby({'title': titleCtrl.text.trim(), 'game_format': format});
+                        final payload = <String, dynamic>{
+                          'title': titleCtrl.text.trim(),
+                          'game_format': format,
+                        };
+                        final min = int.tryParse(eloMinCtrl.text.trim());
+                        final max = int.tryParse(eloMaxCtrl.text.trim());
+                        if (min != null) payload['elo_min'] = min;
+                        if (max != null) payload['elo_max'] = max;
+                        if (commentCtrl.text.trim().isNotEmpty) {
+                          payload['comment'] = commentCtrl.text.trim();
+                        }
+                        final lobby = await AppScope.instance.socialRepository.createLobby(payload);
                         if (!mounted) return;
                         setState(_reloadAll);
                         final newId = (lobby['id'] as num?)?.toInt();
@@ -340,6 +380,10 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
         ),
       ),
     );
+    titleCtrl.dispose();
+    commentCtrl.dispose();
+    eloMinCtrl.dispose();
+    eloMaxCtrl.dispose();
   }
 
   // ═══════════════════════════════════════
@@ -411,7 +455,9 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator()));
               if (snapshot.hasError) return _errorWidget(snapshot.error, () => setState(_reloadAll));
-              final lobbies = snapshot.data ?? const [];
+              final lobbies = (snapshot.data ?? const [])
+                  .where((l) => (l['status'] ?? '').toString() != 'CLOSED')
+                  .toList();
               if (lobbies.isEmpty) {
                 return Padding(
                   padding: const EdgeInsets.symmetric(vertical: 32),
@@ -436,9 +482,13 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
     final id = (l['id'] as num?)?.toInt();
     final title = (l['title'] ?? 'Лобби').toString();
     final status = (l['status'] ?? '').toString();
-    final players = (l['players_count'] as num?)?.toInt() ?? 0;
+    final participants = ((l['participants'] as List?) ?? const []).length;
+    final players = (l['players_count'] as num?)?.toInt() ??
+        (l['current_players_count'] as num?)?.toInt() ??
+        participants;
     final maxPlayers = (l['max_players'] as num?)?.toInt() ?? 4;
-    final isFull = players >= maxPlayers;
+    final isFull = maxPlayers > 0 && players >= maxPlayers;
+    final canJoin = status == 'OPEN' || status == 'WAITING';
     final statusColor = _cardStatusColor(status);
 
     return GestureDetector(
@@ -468,7 +518,7 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
               const SizedBox(width: 6),
               Text('$players/$maxPlayers', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13)),
             ]),
-            if (!isMine && !isFull && id != null)
+            if (!isMine && !isFull && canJoin && id != null)
               ElevatedButton(onPressed: () => _joinLobby(id), style: ElevatedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), minimumSize: const Size(0, 36)), child: const Text('Вступить', style: TextStyle(fontSize: 13)))
             else
               const Icon(Icons.chevron_right_rounded, color: Colors.grey),
@@ -677,10 +727,11 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
 Color _cardStatusColor(String status) {
   switch (status) {
     case 'OPEN': return Colors.green;
-    case 'FULL': return Colors.orange;
-    case 'VOTING': return Colors.blue;
+    case 'WAITING': return Colors.orange;
+    case 'NEGOTIATING': return Colors.blue;
     case 'BOOKED': return Colors.purple;
     case 'READY': return Colors.teal;
+    case 'PAID': return Colors.green;
     case 'CLOSED': return Colors.grey;
     default: return Colors.grey;
   }
@@ -689,10 +740,11 @@ Color _cardStatusColor(String status) {
 String _statusLabel(String status) {
   switch (status) {
     case 'OPEN': return 'Открыто';
-    case 'FULL': return 'Полное';
-    case 'VOTING': return 'Голосование';
+    case 'WAITING': return 'Ожидание';
+    case 'NEGOTIATING': return 'Согласование';
     case 'BOOKED': return 'Забронировано';
     case 'READY': return 'Готово';
+    case 'PAID': return 'Оплачено';
     case 'CLOSED': return 'Завершено';
     default: return status;
   }

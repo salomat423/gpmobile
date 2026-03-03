@@ -18,6 +18,7 @@ class AuthRepository {
   Future<Map<String, dynamic>> login({
     required String phoneNumber,
     required String code,
+    String? fcmToken,
   }) async {
     final deviceId = await _ensureDeviceId();
     final data = await _api.post('/auth/mobile/login/', data: {
@@ -35,6 +36,30 @@ class AuthRepository {
       userId: userId,
       role: map['role']?.toString(),
     );
+    await _postLoginSyncFcm(fcmToken);
+    return map;
+  }
+
+  Future<Map<String, dynamic>> crmLogin({
+    required String username,
+    required String password,
+    String? fcmToken,
+  }) async {
+    final data = await _api.post('/auth/crm/login/', data: {
+      'username': username,
+      'password': password,
+    });
+    final map = Map<String, dynamic>.from(data as Map);
+    final access = (map['access'] ?? '').toString();
+    final refresh = (map['refresh'] ?? '').toString();
+    final userId = map['user_id'] is int ? map['user_id'] as int : int.tryParse('${map['user_id']}');
+    await _storage.saveTokens(
+      access: access,
+      refresh: refresh,
+      userId: userId,
+      role: map['role']?.toString(),
+    );
+    await _postLoginSyncFcm(fcmToken);
     return map;
   }
 
@@ -42,9 +67,10 @@ class AuthRepository {
     final refreshToken = await _storage.readRefreshToken();
     final data = await _api.post('/auth/jwt/refresh/', data: {'refresh': refreshToken});
     final map = Map<String, dynamic>.from(data as Map);
+    final nextRefresh = (map['refresh'] ?? refreshToken ?? '').toString();
     await _storage.saveTokens(
       access: (map['access'] ?? '').toString(),
-      refresh: (map['refresh'] ?? '').toString(),
+      refresh: nextRefresh,
     );
     return map;
   }
@@ -60,7 +86,24 @@ class AuthRepository {
   }
 
   Future<void> saveFcm(String? token) async {
+    await _storage.saveFcmToken(token);
     await _api.post('/auth/me/fcm/', data: {'fcm_token': token});
+  }
+
+  Future<void> syncFcmFromStorage() async {
+    final token = await _storage.readFcmToken();
+    if (token == null || token.isEmpty) return;
+    await _api.post('/auth/me/fcm/', data: {'fcm_token': token});
+  }
+
+  Future<void> logoutWithBlacklist() async {
+    final refreshToken = await _storage.readRefreshToken();
+    if (refreshToken != null && refreshToken.isNotEmpty) {
+      try {
+        await _api.post('/auth/jwt/blacklist/', data: {'refresh': refreshToken});
+      } catch (_) {}
+    }
+    await _storage.clearAuth();
   }
 
   Future<void> deleteAccount() async {
@@ -108,5 +151,15 @@ class AuthRepository {
     final fallback = 'ios-${DateTime.now().millisecondsSinceEpoch}-${Random().nextInt(1 << 32)}-${const Uuid().v4()}';
     await _storage.saveDeviceId(fallback);
     return fallback;
+  }
+
+  Future<void> _postLoginSyncFcm(String? fcmToken) async {
+    try {
+      if (fcmToken != null && fcmToken.isNotEmpty) {
+        await saveFcm(fcmToken);
+        return;
+      }
+      await syncFcmFromStorage();
+    } catch (_) {}
   }
 }

@@ -12,12 +12,22 @@ class TokenStorage {
   static const _kUserId = 'user_id';
   static const _kRole = 'role';
   static const _kIsLoggedIn = 'is_logged_in';
+  static const _kFcmToken = 'fcm_token';
 
   Future<String?> readAccessToken() => _secure.read(key: _kAccess);
   Future<String?> readRefreshToken() => _secure.read(key: _kRefresh);
   Future<String?> readDeviceId() => _secure.read(key: _kDeviceId);
+  Future<String?> readFcmToken() => _secure.read(key: _kFcmToken);
 
   Future<void> saveDeviceId(String id) => _secure.write(key: _kDeviceId, value: id);
+
+  Future<void> saveFcmToken(String? token) async {
+    if (token == null || token.isEmpty) {
+      await _secure.delete(key: _kFcmToken);
+      return;
+    }
+    await _secure.write(key: _kFcmToken, value: token);
+  }
 
   Future<void> saveTokens({
     required String access,

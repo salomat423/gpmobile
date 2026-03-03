@@ -70,4 +70,12 @@ class BookingRepository {
     final data = await _api.post('/bookings/$id/client-confirm/');
     return Map<String, dynamic>.from(data as Map);
   }
+
+  Future<List<Map<String, dynamic>>> coachSchedule({String? from, String? to}) async {
+    final qp = <String, dynamic>{};
+    if (from != null && from.isNotEmpty) qp['from'] = from;
+    if (to != null && to.isNotEmpty) qp['to'] = to;
+    final data = await _api.get('/bookings/coach/schedule/', queryParameters: qp.isEmpty ? null : qp);
+    return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
 }

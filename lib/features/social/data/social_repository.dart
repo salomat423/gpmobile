@@ -1,10 +1,15 @@
 import '../../../core/network/api_client.dart';
+import '../../../core/network/api_error.dart';
 
 class SocialRepository {
   SocialRepository(this._api);
   final ApiClient _api;
 
-  Future<List<Map<String, dynamic>>> listLobbies({String? status, String? format, int? elo}) async {
+  Future<List<Map<String, dynamic>>> listLobbies({
+    String? status,
+    String? format,
+    Object? elo,
+  }) async {
     final qp = <String, dynamic>{};
     if (status != null && status.isNotEmpty) qp['status'] = status;
     if (format != null && format.isNotEmpty) qp['format'] = format;
@@ -82,9 +87,21 @@ class SocialRepository {
     await _api.delete('/lobby/$id/my-extras/$extraId/');
   }
 
-  Future<Map<String, dynamic>> payShare(int id, String paymentMethod) async {
-    final data = await _api.post('/lobby/$id/pay-share/', data: {'payment_method': paymentMethod});
-    return Map<String, dynamic>.from(data as Map);
+  Future<Map<String, dynamic>> payShare(
+    int id,
+    String paymentMethod, {
+    bool? useMembership,
+  }) async {
+    final payload = <String, dynamic>{'payment_method': paymentMethod};
+    if (useMembership != null) payload['use_membership'] = useMembership;
+    try {
+      final data = await _api.post('/lobby/$id/pay/', data: payload);
+      return Map<String, dynamic>.from(data as Map);
+    } on ApiError catch (e) {
+      if (e.statusCode != 404 && e.statusCode != 405) rethrow;
+      final data = await _api.post('/lobby/$id/pay-share/', data: payload);
+      return Map<String, dynamic>.from(data as Map);
+    }
   }
 
   Future<Map<String, dynamic>> paymentStatus(int id) async {
@@ -137,9 +154,30 @@ class SocialRepository {
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  Future<List<Map<String, dynamic>>> matches() async {
-    final data = await _api.get('/gamification/matches/');
+  Future<List<Map<String, dynamic>>> matches({bool all = false}) async {
+    final data = await _api.get(
+      '/gamification/matches/',
+      queryParameters: all ? {'all': 1} : null,
+    );
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>> createMatch({
+    required List<int> teamA,
+    required List<int> teamB,
+    required String score,
+    required String winnerTeam,
+    int? court,
+  }) async {
+    final payload = <String, dynamic>{
+      'team_a': teamA,
+      'team_b': teamB,
+      'score': score,
+      'winner_team': winnerTeam,
+    };
+    if (court != null) payload['court'] = court;
+    final data = await _api.post('/gamification/matches/create/', data: payload);
+    return Map<String, dynamic>.from(data as Map);
   }
 
   Future<List<Map<String, dynamic>>> leaderboard({int limit = 50}) async {

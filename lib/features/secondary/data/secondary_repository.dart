@@ -54,6 +54,20 @@ class SecondaryRepository {
     return Map<String, dynamic>.from(data as Map);
   }
 
+  Future<Map<String, dynamic>> personalTrainingDetail(int id) async {
+    final data = await _api.get('/gym/personal-training/$id/');
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  Future<Map<String, dynamic>> updatePersonalTraining(int id, Map<String, dynamic> payload) async {
+    final data = await _api.patch('/gym/personal-training/$id/', data: payload);
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  Future<void> deletePersonalTraining(int id) async {
+    await _api.delete('/gym/personal-training/$id/');
+  }
+
   Future<List<Map<String, dynamic>>> financeHistory() async {
     final data = await _api.get('/finance/history/');
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();

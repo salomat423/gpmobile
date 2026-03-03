@@ -68,10 +68,15 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           final lobby = snap.data ?? {};
           final title = (lobby['title'] ?? 'Лобби').toString();
           final status = (lobby['status'] ?? '').toString();
-          final playersCount = (lobby['players_count'] as num?)?.toInt() ?? 0;
+          final participantsList = ((lobby['participants'] as List?) ?? const [])
+              .map((e) => Map<String, dynamic>.from(e as Map))
+              .toList();
+          final playersCount = (lobby['players_count'] as num?)?.toInt() ??
+              (lobby['current_players_count'] as num?)?.toInt() ??
+              participantsList.length;
           final maxPlayers = (lobby['max_players'] as num?)?.toInt() ?? 4;
           final format = (lobby['game_format'] ?? '').toString();
-          final players = ((lobby['players'] as List?) ?? []).cast<Map<String, dynamic>>();
+          final players = participantsList;
           final isFull = playersCount >= maxPlayers;
 
           return RefreshIndicator(
@@ -85,10 +90,10 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                 const SizedBox(height: 16),
                 _actionsSection(status, isFull, lobby),
                 const SizedBox(height: 16),
-                if (status == 'FULL' || status == 'VOTING') ...[
+                if (status == 'NEGOTIATING' || status == 'READY' || status == 'BOOKED') ...[
                   _proposalsSection(isDark, lobby),
                 ],
-                if (status == 'BOOKED' || status == 'READY') ...[
+                if (status == 'BOOKED' || status == 'PAID') ...[
                   _paymentSection(lobby),
                 ],
               ],
@@ -153,7 +158,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           const Text('Нет данных об игроках', style: TextStyle(color: Colors.grey))
         else
           ...players.map((p) {
-            final name = '${p['first_name'] ?? ''} ${p['last_name'] ?? ''}'.trim();
+            final name = (p['user_name'] ?? '${p['first_name'] ?? ''} ${p['last_name'] ?? ''}').toString().trim();
             final avatar = p['avatar']?.toString();
             final elo = (p['rating_elo'] ?? '').toString();
             return Container(
@@ -168,7 +173,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                   CircleAvatar(
                     radius: 18,
                     backgroundImage: NetworkImage(
-                      (avatar != null && avatar.isNotEmpty) ? avatar : 'https://i.pravatar.cc/150?img=${(p['id'] ?? 1) % 70}',
+                      (avatar != null && avatar.isNotEmpty) ? avatar : 'https://i.pravatar.cc/150?img=${(p['user'] ?? p['id'] ?? 1) % 70}',
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -187,13 +192,13 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (status == 'OPEN' && !isFull)
+        if ((status == 'OPEN' || status == 'WAITING') && !isFull)
           ElevatedButton.icon(
             onPressed: () => _doAction(() => AppScope.instance.socialRepository.joinLobby(id), 'Вы вступили в лобби'),
             icon: const Icon(Icons.login),
             label: const Text('Вступить'),
           ),
-        if (status == 'OPEN')
+        if (status == 'OPEN' || status == 'WAITING' || status == 'NEGOTIATING' || status == 'READY')
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: OutlinedButton.icon(
@@ -202,7 +207,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               label: const Text('Покинуть', style: TextStyle(color: Colors.redAccent)),
             ),
           ),
-        if (status == 'FULL' || status == 'VOTING')
+        if (status == 'NEGOTIATING')
           ElevatedButton.icon(
             onPressed: () => _showProposeDialog(),
             icon: const Icon(Icons.add_circle_outline),
@@ -227,6 +232,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
 
   Widget _proposalsSection(bool isDark, Map<String, dynamic> lobby) {
     final id = widget.lobbyId;
+    final lobbyStatus = (lobby['status'] ?? '').toString();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -248,7 +254,8 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               children: proposals.map((p) {
                 final pId = (p['id'] as num?)?.toInt();
                 final courtName = (p['court_name'] ?? p['court'] ?? '').toString();
-                final time = (p['proposed_time'] ?? p['start_time'] ?? '').toString();
+                final time = (p['scheduled_time'] ?? p['proposed_time'] ?? p['start_time'] ?? '').toString();
+                final duration = (p['duration_minutes'] as num?)?.toInt();
                 final votes = (p['votes_count'] as num?)?.toInt() ?? 0;
                 final isAccepted = p['is_accepted'] == true;
 
@@ -270,7 +277,11 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 if (courtName.isNotEmpty) Text(courtName, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                if (time.isNotEmpty) Text(time, style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                                if (time.isNotEmpty || duration != null)
+                                  Text(
+                                    duration == null ? time : '$time  •  $duration мин',
+                                    style: const TextStyle(color: Colors.grey, fontSize: 13),
+                                  ),
                               ],
                             ),
                           ),
@@ -284,7 +295,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                           ),
                         ],
                       ),
-                      if (!isAccepted && pId != null) ...[
+                      if (!isAccepted && pId != null && lobbyStatus == 'NEGOTIATING') ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -312,10 +323,11 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           },
         ),
         const SizedBox(height: 8),
-        OutlinedButton(
-          onPressed: () => _doAction(() => AppScope.instance.socialRepository.bookLobby(id), 'Лобби забронировано! Теперь можно оплатить.'),
-          child: const Text('Забронировать корт для лобби'),
-        ),
+        if (lobbyStatus == 'READY')
+          OutlinedButton(
+            onPressed: () => _doAction(() => AppScope.instance.socialRepository.bookLobby(id), 'Лобби забронировано! Теперь можно оплатить.'),
+            child: const Text('Забронировать корт для лобби'),
+          ),
       ],
     );
   }
@@ -333,11 +345,12 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
             if (snap.connectionState == ConnectionState.waiting) return const LinearProgressIndicator();
             if (snap.hasError) return Text(snap.error.toString());
             final ps = snap.data ?? {};
-            final total = (ps['total_amount'] ?? '—').toString();
-            final perPerson = (ps['per_person'] ?? '—').toString();
-            final paidPlayers = (ps['paid_players'] as num?)?.toInt() ?? 0;
-            final totalPlayers = (ps['total_players'] as num?)?.toInt() ?? 0;
-            final myPaid = ps['my_status'] == 'PAID';
+            final total = (ps['court_total'] ?? ps['total_amount'] ?? '—').toString();
+            final perPerson = (ps['base_court_share'] ?? ps['per_person'] ?? '—').toString();
+            final paidPlayers = (ps['paid_count'] as num?)?.toInt() ?? (ps['paid_players'] as num?)?.toInt() ?? 0;
+            final totalPlayers = (ps['total_count'] as num?)?.toInt() ?? (ps['total_players'] as num?)?.toInt() ?? 0;
+            final myPaid =
+                ps['my_status'] == 'PAID' || ps['my_paid'] == true || ps['is_paid'] == true;
 
             return Container(
               padding: const EdgeInsets.all(16),
@@ -382,6 +395,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     DateTime selectedDate = DateTime.now();
     TimeOfDay selectedTime = const TimeOfDay(hour: 18, minute: 0);
     int? selectedCourtId;
+    int durationMinutes = 90;
 
     final result = await showModalBottomSheet<Map<String, dynamic>>(
       context: context,
@@ -444,6 +458,29 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                     );
                   },
                 ),
+                const SizedBox(height: 12),
+                const Text('Длительность', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('60 мин'),
+                      selected: durationMinutes == 60,
+                      onSelected: (_) => setModal(() => durationMinutes = 60),
+                    ),
+                    ChoiceChip(
+                      label: const Text('90 мин'),
+                      selected: durationMinutes == 90,
+                      onSelected: (_) => setModal(() => durationMinutes = 90),
+                    ),
+                    ChoiceChip(
+                      label: const Text('120 мин'),
+                      selected: durationMinutes == 120,
+                      onSelected: (_) => setModal(() => durationMinutes = 120),
+                    ),
+                  ],
+                ),
                 const SizedBox(height: 16),
                 SizedBox(
                   width: double.infinity,
@@ -454,8 +491,9 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                         : () {
                             final start = DateTime(selectedDate.year, selectedDate.month, selectedDate.day, selectedTime.hour, selectedTime.minute);
                             Navigator.pop(ctx, {
-                              'court_id': selectedCourtId,
-                              'proposed_time': start.toUtc().toIso8601String(),
+                              'court': selectedCourtId,
+                              'scheduled_time': start.toUtc().toIso8601String(),
+                              'duration_minutes': durationMinutes,
                             });
                           },
                     child: const Text('Предложить'),
@@ -487,7 +525,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
             children: [
               const Text('Выберите способ оплаты:'),
               const SizedBox(height: 12),
-              ...['KASPI', 'CARD', 'CASH'].map((m) => ListTile(
+              ...['KASPI', 'CARD', 'CASH', 'ONLINE'].map((m) => ListTile(
                     title: Text(_payLabel(m)),
                     leading: Icon(
                       m == payMethod ? Icons.radio_button_checked : Icons.radio_button_off,
@@ -513,10 +551,11 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
 Color _statusColor(String status) {
   switch (status) {
     case 'OPEN': return Colors.green;
-    case 'FULL': return Colors.orange;
-    case 'VOTING': return Colors.blue;
+    case 'WAITING': return Colors.orange;
+    case 'NEGOTIATING': return Colors.blue;
     case 'BOOKED': return Colors.purple;
     case 'READY': return Colors.teal;
+    case 'PAID': return Colors.green;
     case 'CLOSED': return Colors.grey;
     default: return Colors.grey;
   }
@@ -525,10 +564,11 @@ Color _statusColor(String status) {
 String _statusLabel(String status) {
   switch (status) {
     case 'OPEN': return 'Открыто';
-    case 'FULL': return 'Полное';
-    case 'VOTING': return 'Голосование';
+    case 'WAITING': return 'Ожидание';
+    case 'NEGOTIATING': return 'Согласование';
     case 'BOOKED': return 'Забронировано';
     case 'READY': return 'Готово';
+    case 'PAID': return 'Оплачено';
     case 'CLOSED': return 'Завершено';
     default: return status;
   }
@@ -539,6 +579,7 @@ String _payLabel(String method) {
     case 'KASPI': return 'Kaspi';
     case 'CARD': return 'Карта';
     case 'CASH': return 'Наличные';
+    case 'ONLINE': return 'Онлайн';
     default: return method;
   }
 }

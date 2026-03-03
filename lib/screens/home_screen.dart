@@ -225,16 +225,18 @@ class _HomeBody extends StatelessWidget {
 
   // 2.2 Информационный блок (Баннеры)
   Widget _buildInfoBanners(List<Map<String, dynamic>> promotions, List<Map<String, dynamic>> news) {
-    final banners = <Map<String, String>>[
+    final banners = <Map<String, dynamic>>[
       ...promotions.take(3).map((e) => {
             'title': (e['title'] ?? 'Промо').toString(),
             'subtitle': (e['description'] ?? '').toString(),
             'type': 'АКЦИЯ',
+            'imageUrl': (e['image_url'] ?? '').toString(),
           }),
       ...news.take(3).map((e) => {
             'title': (e['title'] ?? 'Новость').toString(),
-            'subtitle': (e['preview'] ?? '').toString(),
+            'subtitle': (e['preview'] ?? e['content'] ?? '').toString(),
             'type': 'НОВОСТЬ',
+            'imageUrl': (e['image_url'] ?? '').toString(),
           }),
     ];
     if (banners.isEmpty) {
@@ -279,16 +281,16 @@ class _HomeBody extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(color: Colors.white24, borderRadius: BorderRadius.circular(6)),
-                    child: Text(
-                      banner['type']!,
-                      style: TextStyle(color: isPromo ? Colors.black : Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  Text(
-                    banner['title'] ?? '',
-                    style: TextStyle(
-                        color: isPromo ? const Color(0xFF0F3628) : Colors.white,
-                        fontSize: 18, fontWeight: FontWeight.w800, height: 1.2
+                     child: Text(
+                       (banner['type'] ?? '').toString(),
+                       style: TextStyle(color: isPromo ? Colors.black : Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                     ),
+                   ),
+                   Text(
+                     (banner['title'] ?? '').toString(),
+                     style: TextStyle(
+                         color: isPromo ? const Color(0xFF0F3628) : Colors.white,
+                         fontSize: 18, fontWeight: FontWeight.w800, height: 1.2
                     ),
                     maxLines: 2, overflow: TextOverflow.ellipsis,
                   ),
@@ -480,29 +482,120 @@ class _HomeBody extends StatelessWidget {
   }
 
   // Детали новости (Bottom Sheet)
-  Widget _buildNewsDetailsSheet(BuildContext context, Map<String, String> banner) {
+  Widget _buildNewsDetailsSheet(BuildContext context, Map<String, dynamic> banner) {
     final theme = Theme.of(context);
+    final type = (banner['type'] ?? '').toString();
+    final isPromo = type == 'АКЦИЯ';
+    final imageUrl = (banner['imageUrl'] ?? '').toString();
+    final title = (banner['title'] ?? 'Событие').toString();
+    final subtitle = (banner['subtitle'] ?? '').toString().trim();
+
+    return FractionallySizedBox(
+      heightFactor: 0.86,
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 12),
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Expanded(
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(22),
+                      child: SizedBox(
+                        height: 220,
+                        width: double.infinity,
+                        child: (imageUrl.isNotEmpty)
+                            ? Image.network(
+                                imageUrl,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _buildBannerSheetImageFallback(isPromo),
+                              )
+                            : _buildBannerSheetImageFallback(isPromo),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isPromo ? const Color(0xFFD4F826) : const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        type,
+                        style: TextStyle(
+                          color: isPromo ? const Color(0xFF0F3628) : const Color(0xFF1B5E20),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      title,
+                      style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, height: 1.15),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      subtitle.isEmpty ? 'Подробности появятся в ближайшее время.' : subtitle,
+                      style: const TextStyle(fontSize: 16, height: 1.5, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              minimum: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Понятно'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBannerSheetImageFallback(bool isPromo) {
     return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(color: theme.cardColor, borderRadius: const BorderRadius.vertical(top: Radius.circular(30))),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)))),
-          const SizedBox(height: 20),
-          Text(banner['title']!, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
-          const SizedBox(height: 15),
-          Text(
-            (banner['subtitle'] ?? 'Спешим сообщить важные новости нашего падел-центра!'),
-            style: const TextStyle(fontSize: 16, height: 1.5, color: Colors.grey),
-          ),
-          const SizedBox(height: 30),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(onPressed: () => Navigator.pop(context), child: const Text('Понятно')),
-          )
-        ],
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: isPromo
+              ? [const Color(0xFFD4F826), const Color(0xFFAEEA00)]
+              : [const Color(0xFF0F3628), const Color(0xFF1B5E20)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          isPromo ? Icons.local_offer_rounded : Icons.newspaper_rounded,
+          color: isPromo ? const Color(0xFF0F3628) : Colors.white,
+          size: 56,
+        ),
       ),
     );
   }

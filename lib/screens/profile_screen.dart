@@ -55,7 +55,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
     );
     if (ok != true || !mounted) return;
-    await AppScope.instance.authRepository.logout();
+    await AppScope.instance.authRepository.logoutWithBlacklist();
     AppScope.instance.authState.value = AuthState.unauthenticated;
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
@@ -238,6 +238,78 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  void _showGymVisitsSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.8),
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 12),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  Icon(Icons.fitness_center),
+                  SizedBox(width: 8),
+                  Text('История посещений зала', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: AppScope.instance.secondaryRepository.gymVisits(),
+                builder: (ctx, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snap.hasError) {
+                    return Center(child: Text(snap.error.toString(), textAlign: TextAlign.center));
+                  }
+                  final visits = snap.data ?? const [];
+                  if (visits.isEmpty) {
+                    return const Center(child: Text('Посещений пока нет', style: TextStyle(color: Colors.grey)));
+                  }
+                  return ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    itemCount: visits.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (_, i) {
+                      final v = visits[i];
+                      final date = (v['created_at'] ?? v['date'] ?? '').toString();
+                      final status = (v['status'] ?? v['type'] ?? 'VISIT').toString();
+                      final note = (v['message'] ?? v['description'] ?? '').toString();
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: const Icon(Icons.check_circle_outline, color: Colors.green),
+                        title: Text(date.isEmpty ? 'Посещение #${i + 1}' : date),
+                        subtitle: note.isEmpty ? null : Text(note, maxLines: 2, overflow: TextOverflow.ellipsis),
+                        trailing: Text(status, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, dynamic>>(
@@ -404,6 +476,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       MaterialPageRoute(builder: (_) => const ClubServicesScreen()),
                     );
                   },
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  tileColor: Theme.of(context).cardColor,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  title: const Text('Посещения зала'),
+                  leading: const Icon(Icons.fitness_center_outlined),
+                  trailing: const Icon(Icons.chevron_right_rounded, color: Colors.grey),
+                  onTap: _showGymVisitsSheet,
                 ),
                 const SizedBox(height: 24),
                 OutlinedButton.icon(
