@@ -380,10 +380,6 @@ class _SocialScreenState extends State<SocialScreen> with SingleTickerProviderSt
         ),
       ),
     );
-    titleCtrl.dispose();
-    commentCtrl.dispose();
-    eloMinCtrl.dispose();
-    eloMaxCtrl.dispose();
   }
 
   // ═══════════════════════════════════════

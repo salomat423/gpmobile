@@ -53,7 +53,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     int duration = 60;
     int? selectedCoachId;
     String paymentMethod = 'KASPI';
-    final promoCtrl = TextEditingController();
+    String promoCode = '';
 
     Future<List<Map<String, dynamic>>> loadCoaches() {
       final slot = DateTime(
@@ -267,8 +267,8 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                           children: [
                             Expanded(
                               child: TextField(
-                                controller: promoCtrl,
                                 textCapitalization: TextCapitalization.characters,
+                                onChanged: (v) => promoCode = v,
                                 decoration: InputDecoration(
                                   labelText: 'Промокод (опционально)',
                                   filled: true,
@@ -283,7 +283,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                             const SizedBox(width: 8),
                             OutlinedButton(
                               onPressed: () async {
-                                final code = promoCtrl.text.trim();
+                                final code = promoCode.trim();
                                 if (code.isEmpty) return;
                                 try {
                                   final result = await AppScope.instance.secondaryRepository.validatePromo(code);
@@ -338,7 +338,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                                       duration,
                                       paymentMethod,
                                       coachId: selectedCoachId,
-                                      promoCode: promoCtrl.text.trim(),
+                                      promoCode: promoCode.trim(),
                                     )
                                 : null,
                             child: const Text('Забронировать', style: TextStyle(fontSize: 16)),
@@ -354,7 +354,6 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
         },
       ),
     );
-    promoCtrl.dispose();
   }
 
   Future<void> _bookCourt(
