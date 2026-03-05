@@ -12,20 +12,40 @@ String defaultGreeting() {
   return 'Доброй ночи,';
 }
 
-class HomeScreen extends StatelessWidget {
+class HomeScreen extends StatefulWidget {
   final VoidCallback? onGoToBooking;
 
   const HomeScreen({super.key, this.onGoToBooking});
 
   @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  late Future<Map<String, dynamic>> _homeFuture;
+  late Future<Map<String, dynamic>> _statsFuture;
+  late Future<List<Map<String, dynamic>>> _membershipsFuture;
+  late Future<List<Map<String, dynamic>>> _bookingsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    final scope = AppScope.instance;
+    _homeFuture = scope.authRepository.home();
+    _statsFuture = scope.authRepository.stats().catchError((_) => <String, dynamic>{});
+    _membershipsFuture = scope.membershipRepository.myMemberships().catchError((_) => <Map<String, dynamic>>[]);
+    _bookingsFuture = scope.bookingRepository.myBookings().catchError((_) => <Map<String, dynamic>>[]);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FutureBuilder<Map<String, dynamic>>(
-      future: AppScope.instance.authRepository.home(),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
+      future: _homeFuture,
+      builder: (context, homeSnap) {
+        if (homeSnap.connectionState == ConnectionState.waiting) {
           return const Scaffold(body: Center(child: CircularProgressIndicator()));
         }
-        if (snapshot.hasError) {
+        if (homeSnap.hasError) {
           return Scaffold(
             body: Center(
               child: Padding(
@@ -41,7 +61,7 @@ class HomeScreen extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      snapshot.error.toString(),
+                      homeSnap.error.toString(),
                       textAlign: TextAlign.center,
                       style: const TextStyle(color: Colors.grey),
                     ),
@@ -51,7 +71,28 @@ class HomeScreen extends StatelessWidget {
             ),
           );
         }
-        return _HomeBody(data: snapshot.data ?? const {}, onGoToBooking: onGoToBooking);
+        return FutureBuilder<List<dynamic>>(
+          future: Future.wait([_statsFuture, _membershipsFuture, _bookingsFuture]),
+          builder: (context, extraSnap) {
+            final statsData = (extraSnap.data != null)
+                ? extraSnap.data![0] as Map<String, dynamic>
+                : <String, dynamic>{};
+            final memberships = (extraSnap.data != null)
+                ? extraSnap.data![1] as List<Map<String, dynamic>>
+                : <Map<String, dynamic>>[];
+            final bookings = (extraSnap.data != null)
+                ? extraSnap.data![2] as List<Map<String, dynamic>>
+                : <Map<String, dynamic>>[];
+
+            return _HomeBody(
+              data: homeSnap.data ?? const {},
+              stats: statsData,
+              memberships: memberships,
+              bookings: bookings,
+              onGoToBooking: widget.onGoToBooking,
+            );
+          },
+        );
       },
     );
   }
@@ -59,9 +100,18 @@ class HomeScreen extends StatelessWidget {
 
 class _HomeBody extends StatelessWidget {
   final Map<String, dynamic> data;
+  final Map<String, dynamic> stats;
+  final List<Map<String, dynamic>> memberships;
+  final List<Map<String, dynamic>> bookings;
   final VoidCallback? onGoToBooking;
 
-  const _HomeBody({required this.data, required this.onGoToBooking});
+  const _HomeBody({
+    required this.data,
+    required this.stats,
+    required this.memberships,
+    required this.bookings,
+    required this.onGoToBooking,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +120,6 @@ class _HomeBody extends StatelessWidget {
     final titleColor = isDark ? Colors.white : AppTheme.textPrimary;
     final subTextColor = isDark ? Colors.white70 : Colors.grey[600];
     final user = (data['user'] as Map?)?.cast<String, dynamic>() ?? {};
-    final nextBooking = (data['next_booking'] as Map?)?.cast<String, dynamic>();
     final promotions = ((data['promotions'] as List?) ?? const [])
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
@@ -92,7 +141,7 @@ class _HomeBody extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // --- 2.1 ПЕРСОНАЛИЗАЦИЯ (Header) ---
+              // --- ПЕРСОНАЛИЗАЦИЯ (Header) ---
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -118,42 +167,55 @@ class _HomeBody extends StatelessWidget {
 
               const SizedBox(height: 30),
 
-              // --- 2.2 ИНФОРМАЦИОННЫЙ БЛОК (Новости, Акции, Турниры) ---
+              // --- ИНФОРМАЦИОННЫЙ БЛОК (Новости, Акции) ---
               _buildSectionTitle(titleColor, 'События и акции'),
               const SizedBox(height: 15),
               _buildInfoBanners(promotions, news),
 
               const SizedBox(height: 30),
 
-              // --- 2.3 ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ (Фитнес, Бар, Процедуры) ---
+              // --- ТУРНИРЫ И МЕРОПРИЯТИЯ ---
+              _buildSectionTitle(titleColor, 'Турниры и мероприятия'),
+              const SizedBox(height: 15),
+              _buildTournamentSection(theme, isDark),
+
+              const SizedBox(height: 30),
+
+              // --- ИЗМЕНЕНИЯ В РАБОТЕ ---
+              _buildChangesInfoCard(theme, isDark),
+
+              const SizedBox(height: 30),
+
+              // --- МОЯ СТАТИСТИКА ---
+              _buildSectionTitle(titleColor, 'Моя статистика'),
+              const SizedBox(height: 15),
+              _buildStatsSection(theme, isDark),
+
+              const SizedBox(height: 30),
+
+              // --- МОЙ АБОНЕМЕНТ ---
+              _buildSectionTitle(titleColor, 'Мой абонемент'),
+              const SizedBox(height: 15),
+              _buildMembershipSection(theme, isDark),
+
+              const SizedBox(height: 30),
+
+              // --- ДОПОЛНИТЕЛЬНЫЕ УСЛУГИ ---
               _buildSectionTitle(titleColor, 'Сервисы центра'),
               const SizedBox(height: 15),
               _buildAdditionalServices(isDark, theme),
 
               const SizedBox(height: 30),
 
-              // --- 2.1 ИНФОРМАЦИЯ О БЛИЖАЙШИХ АКТИВНОСТЯХ ---
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  _buildSectionTitle(titleColor, 'Мои игры'),
-                ],
-              ),
+              // --- МОЁ РАСПИСАНИЕ ---
+              _buildSectionTitle(titleColor, 'Моё расписание'),
               const SizedBox(height: 10),
-              if (nextBooking != null)
-                _buildBookingCard(context, {
-                  'court': nextBooking['court']?.toString() ?? 'Корт',
-                  'date':
-                      '${nextBooking['date'] ?? ''} ${nextBooking['start_time'] ?? ''}'.trim(),
-                  'status': nextBooking['status']?.toString() ?? 'PENDING',
-                })
-              else
-                const Text('Ближайших игр нет', style: TextStyle(color: Colors.grey)),
+              _buildScheduleSection(context, theme, isDark),
 
               const SizedBox(height: 25),
 
-              // КНОПКА БРОНИРОВАНИЯ
-              _buildBookingAction(isDark, titleColor, subTextColor, onGoToBooking),
+              // --- БЫСТРЫЕ ДЕЙСТВИЯ ---
+              _buildQuickActions(isDark, titleColor, subTextColor, onGoToBooking),
               const SizedBox(height: 20),
             ],
           ),
@@ -162,7 +224,6 @@ class _HomeBody extends StatelessWidget {
     );
   }
 
-  // Виджет заголовка секции
   Widget _buildSectionTitle(Color color, String title) {
     return Text(
       title,
@@ -170,7 +231,6 @@ class _HomeBody extends StatelessWidget {
     );
   }
 
-  // Аватар пользователя
   Widget _buildUserAvatar(ThemeData theme, String? avatarUrl) {
     return Container(
       width: 50, height: 50,
@@ -188,7 +248,6 @@ class _HomeBody extends StatelessWidget {
     );
   }
 
-  // Клубный пропуск
   Widget _buildClubPass(BuildContext context, bool isDark) {
     final userMap = (data['user'] as Map?)?.cast<String, dynamic>() ?? {};
     final userName = (userMap['full_name'] ?? '').toString();
@@ -223,7 +282,6 @@ class _HomeBody extends StatelessWidget {
     );
   }
 
-  // 2.2 Информационный блок (Баннеры)
   Widget _buildInfoBanners(List<Map<String, dynamic>> promotions, List<Map<String, dynamic>> news) {
     final banners = <Map<String, dynamic>>[
       ...promotions.take(3).map((e) => {
@@ -304,28 +362,312 @@ class _HomeBody extends StatelessWidget {
     );
   }
 
-  // 2.3 Дополнительные услуги
+  // --- ТУРНИРЫ И МЕРОПРИЯТИЯ ---
+  Widget _buildTournamentSection(ThemeData theme, bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48, height: 48,
+            decoration: BoxDecoration(
+              color: AppTheme.accentColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Icon(Icons.emoji_events_rounded, color: AppTheme.primaryColor, size: 26),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Text(
+              'Следите за анонсами турниров и мероприятий',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+                color: isDark ? Colors.white70 : AppTheme.textPrimary,
+                height: 1.4,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- ИЗМЕНЕНИЯ В РАБОТЕ ---
+  Widget _buildChangesInfoCard(ThemeData theme, bool isDark) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.blueGrey.shade900.withValues(alpha: 0.5) : const Color(0xFFFFF8E1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isDark ? Colors.amber.withValues(alpha: 0.2) : Colors.amber.shade200,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline_rounded, color: Colors.amber.shade700, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Изменения в работе',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: isDark ? Colors.white : AppTheme.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Актуальное расписание и изменения смотрите в новостях',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark ? Colors.white60 : Colors.grey[700],
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- МОЯ СТАТИСТИКА ---
+  Widget _buildStatsSection(ThemeData theme, bool isDark) {
+    final s = (stats['stats'] as Map?)?.cast<String, dynamic>() ?? stats;
+    final items = [
+      _StatItem('Всего посещений', _safeInt(s['total_bookings']), Icons.calendar_today_rounded, Colors.blue),
+      _StatItem('Матчей сыграно', _safeInt(s['matches_played']), Icons.sports_tennis_rounded, Colors.orange),
+      _StatItem('Побед', _safeInt(s['matches_won']), Icons.emoji_events_rounded, Colors.green),
+      _StatItem('Посещений зала', _safeInt(s['gym_visits']), Icons.fitness_center_rounded, Colors.purple),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(child: _buildStatTile(items[0], isDark)),
+              const SizedBox(width: 12),
+              Expanded(child: _buildStatTile(items[1], isDark)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: _buildStatTile(items[2], isDark)),
+              const SizedBox(width: 12),
+              Expanded(child: _buildStatTile(items[3], isDark)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatTile(_StatItem item, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withValues(alpha: 0.05) : AppTheme.bgColor,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(item.icon, color: item.color, size: 22),
+          const SizedBox(height: 10),
+          Text(
+            item.value.toString(),
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: isDark ? Colors.white : AppTheme.textPrimary,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            item.label,
+            style: TextStyle(
+              fontSize: 12,
+              color: isDark ? Colors.white54 : Colors.grey[600],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  int _safeInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    return int.tryParse(value.toString()) ?? 0;
+  }
+
+  // --- МОЙ АБОНЕМЕНТ ---
+  Widget _buildMembershipSection(ThemeData theme, bool isDark) {
+    final active = memberships.where((m) => m['is_frozen'] != true).toList();
+    if (active.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          color: theme.cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.card_membership_rounded, color: Colors.grey[400], size: 28),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Text(
+                'У вас нет активного абонемента',
+                style: TextStyle(fontSize: 14, color: isDark ? Colors.white54 : Colors.grey[600]),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final m = active.first;
+    final typeName = (m['membership_type_name'] ?? 'Абонемент').toString();
+    final endDateStr = (m['end_date'] ?? '').toString();
+    final hoursRemaining = m['hours_remaining'];
+
+    DateTime? endDate;
+    try {
+      endDate = DateTime.parse(endDateStr);
+    } catch (_) {}
+
+    _MembershipStatus status = _MembershipStatus.active;
+    if (endDate != null) {
+      final daysLeft = endDate.difference(DateTime.now()).inDays;
+      if (daysLeft < 0) {
+        status = _MembershipStatus.expired;
+      } else if (daysLeft <= 7) {
+        status = _MembershipStatus.expiring;
+      }
+    }
+
+    final statusColor = switch (status) {
+      _MembershipStatus.active => Colors.green,
+      _MembershipStatus.expiring => Colors.orange,
+      _MembershipStatus.expired => Colors.red,
+    };
+    final statusText = switch (status) {
+      _MembershipStatus.active => 'Активен',
+      _MembershipStatus.expiring => 'Истекает',
+      _MembershipStatus.expired => 'Истёк',
+    };
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 44, height: 44,
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.card_membership_rounded, color: statusColor, size: 24),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(typeName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: isDark ? Colors.white : AppTheme.textPrimary)),
+                    const SizedBox(height: 2),
+                    if (endDateStr.isNotEmpty)
+                      Text('до $endDateStr', style: TextStyle(fontSize: 12, color: isDark ? Colors.white54 : Colors.grey[600])),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: statusColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(statusText, style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+          if (hoursRemaining != null) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withValues(alpha: 0.05) : AppTheme.bgColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.schedule_rounded, size: 18, color: isDark ? Colors.white54 : Colors.grey[600]),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Осталось часов: $hoursRemaining',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white70 : AppTheme.textPrimary),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildAdditionalServices(bool isDark, ThemeData theme) {
     final services = [
       {
         'name': 'Фитнес-зона',
         'icon': Icons.fitness_center_rounded,
         'color': Colors.orange,
-        'onTap': () {}, // позже откроем Fitness screen
+        'onTap': () {},
       },
       {
         'name': 'Спорт-бар',
         'icon': Icons.local_bar_rounded,
         'color': Colors.blue,
-        'onTap': () {
-          // ВАЖНО: context нужен, поэтому onTap будет вызываться внутри build через Builder ниже
-        },
+        'onTap': () {},
       },
       {
         'name': 'Восстановление',
         'icon': Icons.spa_rounded,
         'color': Colors.teal,
-        'onTap': () {}, // позже откроем Recovery screen
+        'onTap': () {},
       },
     ];
 
@@ -391,11 +733,26 @@ class _HomeBody extends StatelessWidget {
     );
   }
 
-  // Карточка бронирования
+  // --- МОЁ РАСПИСАНИЕ ---
+  Widget _buildScheduleSection(BuildContext context, ThemeData theme, bool isDark) {
+    if (bookings.isEmpty) {
+      return const Text('Ближайших игр нет', style: TextStyle(color: Colors.grey));
+    }
+    final upcoming = bookings.take(5).toList();
+    return Column(
+      children: upcoming.map((b) => _buildBookingCard(context, {
+        'court': (b['court_name'] ?? b['court'] ?? 'Корт').toString(),
+        'date': (b['start_time'] ?? '').toString(),
+        'status': (b['status'] ?? 'PENDING').toString(),
+      })).toList(),
+    );
+  }
+
   Widget _buildBookingCard(BuildContext context, Map<String, dynamic> booking) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final isPaid = booking['status'] == 'Оплачено';
+    final status = booking['status'].toString();
+    final isPaid = status == 'Оплачено' || status == 'confirmed' || status == 'CONFIRMED';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -413,8 +770,8 @@ class _HomeBody extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(booking['court'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                Text(booking['date'], style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                Text(booking['court'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                Text(booking['date'].toString(), style: const TextStyle(color: Colors.grey, fontSize: 12)),
               ],
             ),
           ),
@@ -454,34 +811,67 @@ class _HomeBody extends StatelessWidget {
     );
   }
 
-  // Кнопка быстрого бронирования
-  Widget _buildBookingAction(bool isDark, Color titleColor, Color? subTextColor, VoidCallback? onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: isDark ? const Color(0xFF1E2F38) : const Color(0xFFE3F2FD),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Row(
-          children: [
-            const CircleAvatar(backgroundColor: Colors.blue, child: Icon(Icons.add, color: Colors.white)),
-            const SizedBox(width: 16),
-            Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Забронировать корт', style: TextStyle(fontWeight: FontWeight.bold, color: titleColor)),
-                Text('Выбрать свободное время', style: TextStyle(color: subTextColor, fontSize: 12)),
-              ],
+  // --- БЫСТРЫЕ ДЕЙСТВИЯ ---
+  Widget _buildQuickActions(bool isDark, Color titleColor, Color? subTextColor, VoidCallback? onTap) {
+    return Row(
+      children: [
+        Expanded(
+          child: GestureDetector(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1E2F38) : const Color(0xFFE3F2FD),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Colors.blue,
+                    child: Icon(Icons.add, color: Colors.white, size: 22),
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Забронировать корт', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: titleColor)),
+                  const SizedBox(height: 2),
+                  Text('Свободное время', style: TextStyle(color: subTextColor, fontSize: 11)),
+                ],
+              ),
             ),
-          ],
+          ),
         ),
-      ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: GestureDetector(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF2F1E38) : const Color(0xFFF3E5F5),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  CircleAvatar(
+                    radius: 20,
+                    backgroundColor: Colors.deepPurple.shade400,
+                    child: const Icon(Icons.sports_rounded, color: Colors.white, size: 22),
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Запись на тренировку', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: titleColor)),
+                  const SizedBox(height: 2),
+                  Text('Выбрать тренера', style: TextStyle(color: subTextColor, fontSize: 11)),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  // Детали новости (Bottom Sheet)
   Widget _buildNewsDetailsSheet(BuildContext context, Map<String, dynamic> banner) {
     final theme = Theme.of(context);
     final type = (banner['type'] ?? '').toString();
@@ -676,3 +1066,13 @@ class _HomeBody extends StatelessWidget {
     );
   }
 }
+
+class _StatItem {
+  final String label;
+  final int value;
+  final IconData icon;
+  final Color color;
+  const _StatItem(this.label, this.value, this.icon, this.color);
+}
+
+enum _MembershipStatus { active, expiring, expired }

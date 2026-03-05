@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+
 import '../core/di/app_scope.dart';
-import 'home_screen.dart';
 import 'booking_screen.dart';
-import 'social_screen.dart';
-import 'rating_screen.dart';
+import 'coaches_screen.dart';
+import 'home_screen.dart';
 import 'profile_screen.dart';
+import 'rating_screen.dart';
+import 'social_screen.dart';
 
 class MainWrapper extends StatefulWidget {
   const MainWrapper({super.key});

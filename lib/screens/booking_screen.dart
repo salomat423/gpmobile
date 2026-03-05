@@ -52,8 +52,15 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     TimeOfDay selectedTime = TimeOfDay(hour: DateTime.now().hour + 1, minute: 0);
     int duration = 60;
     int? selectedCoachId;
+    String? selectedCoachName;
     String paymentMethod = 'KASPI';
     String promoCode = '';
+
+    bool svcInventory = false;
+    bool svcRecovery = false;
+    bool svcSportBar = false;
+
+    final promoController = TextEditingController();
 
     Future<List<Map<String, dynamic>>> loadCoaches() {
       final slot = DateTime(
@@ -69,7 +76,15 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
       );
     }
 
+    Future<Map<String, dynamic>> loadAvailability() {
+      return AppScope.instance.bookingRepository.checkAvailability(
+        courtId: courtId,
+        dateIso: _dateOnlyIso(selectedDate),
+      );
+    }
+
     Future<List<Map<String, dynamic>>> coachesFuture = loadCoaches();
+    Future<Map<String, dynamic>> availFuture = loadAvailability();
 
     await showModalBottomSheet(
       context: context,
@@ -78,6 +93,12 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           final isDark = Theme.of(ctx).brightness == Brightness.dark;
+
+          final bool isEvening = selectedTime.hour >= 18;
+          final bool isWeekend =
+              selectedDate.weekday == DateTime.saturday ||
+              selectedDate.weekday == DateTime.sunday;
+
           return DraggableScrollableSheet(
             initialChildSize: 0.88,
             maxChildSize: 0.92,
@@ -136,7 +157,34 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                           Text(description, style: const TextStyle(fontSize: 14, color: Colors.grey)),
                         ],
                         const SizedBox(height: 8),
-                        Text('$price тг/час', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.primaryColor)),
+
+                        // Price + premium rate badges
+                        Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 6,
+                          children: [
+                            Text('$price тг/час', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.primaryColor)),
+                            if (isEvening)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.orange.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text('Вечер +', style: TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold)),
+                              ),
+                            if (isWeekend)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.deepPurple.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text('Выходной +', style: TextStyle(color: Colors.deepPurple, fontSize: 11, fontWeight: FontWeight.bold)),
+                              ),
+                          ],
+                        ),
 
                         const SizedBox(height: 20),
                         const Divider(),
@@ -157,7 +205,9 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                                   (d) => setSheetState(() {
                                     selectedDate = d;
                                     selectedCoachId = null;
+                                    selectedCoachName = null;
                                     coachesFuture = loadCoaches();
+                                    availFuture = loadAvailability();
                                   }),
                                 ),
                               ),
@@ -174,6 +224,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                                   (t) => setSheetState(() {
                                     selectedTime = t;
                                     selectedCoachId = null;
+                                    selectedCoachName = null;
                                     coachesFuture = loadCoaches();
                                   }),
                                 ),
@@ -181,6 +232,105 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                             ),
                           ],
                         ),
+
+                        // --- Time slot visualization ---
+                        const SizedBox(height: 16),
+                        const Text('Доступные слоты', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                        const SizedBox(height: 8),
+                        FutureBuilder<Map<String, dynamic>>(
+                          future: availFuture,
+                          builder: (ctx, snap) {
+                            if (snap.connectionState == ConnectionState.waiting) {
+                              return const SizedBox(height: 44, child: Center(child: LinearProgressIndicator()));
+                            }
+                            if (snap.hasError) {
+                              return Text('Не удалось загрузить расписание', style: TextStyle(color: Colors.grey[500], fontSize: 12));
+                            }
+                            final data = snap.data ?? {};
+                            if (data['is_holiday'] == true) {
+                              return Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Colors.red.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.event_busy, color: Colors.redAccent, size: 20),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        (data['reason'] ?? 'Нерабочий день').toString(),
+                                        style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }
+                            final busySlots = (data['busy_slots'] as List?) ?? [];
+                            return SizedBox(
+                              height: 44,
+                              child: ListView.separated(
+                                scrollDirection: Axis.horizontal,
+                                itemCount: 14,
+                                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                                itemBuilder: (ctx, i) {
+                                  final hour = 8 + i;
+                                  final slotStart = hour * 60;
+                                  final slotEnd = slotStart + 60;
+                                  bool isBusy = false;
+                                  for (final raw in busySlots) {
+                                    if (raw is! Map) continue;
+                                    final s = _parseSlotMinutes((raw['start'] ?? '').toString());
+                                    final e = _parseSlotMinutes((raw['end'] ?? '').toString());
+                                    if (s != null && e != null && slotStart < e && slotEnd > s) {
+                                      isBusy = true;
+                                      break;
+                                    }
+                                  }
+                                  final isSelected = selectedTime.hour == hour && selectedTime.minute == 0;
+                                  return GestureDetector(
+                                    onTap: isBusy
+                                        ? null
+                                        : () => setSheetState(() {
+                                              selectedTime = TimeOfDay(hour: hour, minute: 0);
+                                              selectedCoachId = null;
+                                              selectedCoachName = null;
+                                              coachesFuture = loadCoaches();
+                                            }),
+                                    child: Container(
+                                      width: 64,
+                                      alignment: Alignment.center,
+                                      decoration: BoxDecoration(
+                                        color: isSelected
+                                            ? AppTheme.primaryColor
+                                            : isBusy
+                                                ? Colors.red.withValues(alpha: 0.15)
+                                                : Colors.green.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(12),
+                                        border: isSelected ? Border.all(color: AppTheme.primaryColor, width: 2) : null,
+                                      ),
+                                      child: Text(
+                                        '${hour.toString().padLeft(2, '0')}:00',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 13,
+                                          color: isSelected
+                                              ? Colors.white
+                                              : isBusy
+                                                  ? Colors.red
+                                                  : Colors.green[700],
+                                        ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            );
+                          },
+                        ),
+
                         const SizedBox(height: 16),
                         const Text('Длительность', style: TextStyle(fontWeight: FontWeight.w600)),
                         const SizedBox(height: 8),
@@ -193,6 +343,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                               onSelected: (_) => setSheetState(() {
                                 duration = 60;
                                 selectedCoachId = null;
+                                selectedCoachName = null;
                                 coachesFuture = loadCoaches();
                               }),
                             ),
@@ -202,6 +353,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                               onSelected: (_) => setSheetState(() {
                                 duration = 90;
                                 selectedCoachId = null;
+                                selectedCoachName = null;
                                 coachesFuture = loadCoaches();
                               }),
                             ),
@@ -211,6 +363,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                               onSelected: (_) => setSheetState(() {
                                 duration = 120;
                                 selectedCoachId = null;
+                                selectedCoachName = null;
                                 coachesFuture = loadCoaches();
                               }),
                             ),
@@ -237,7 +390,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                               );
                             }
                             return DropdownButtonFormField<int>(
-                              initialValue: selectedCoachId,
+                              value: selectedCoachId,
                               decoration: InputDecoration(
                                 labelText: 'Тренер (опционально)',
                                 filled: true,
@@ -250,23 +403,66 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                               items: coaches.map((c) {
                                 final id = (c['id'] as num?)?.toInt();
                                 if (id == null) return null;
-                                final name = (c['full_name'] ?? c['username'] ?? 'Тренер').toString();
-                                final price = (c['coach_price'] ?? '').toString();
-                                final label = price.isEmpty || price == '0.00' ? name : '$name • $price тг';
+                                final cName = (c['full_name'] ?? c['username'] ?? 'Тренер').toString();
+                                final cPrice = (c['coach_price'] ?? '').toString();
+                                final label = cPrice.isEmpty || cPrice == '0.00' ? cName : '$cName • $cPrice тг';
                                 return DropdownMenuItem<int>(
                                   value: id,
                                   child: Text(label),
                                 );
                               }).whereType<DropdownMenuItem<int>>().toList(),
-                              onChanged: (v) => setSheetState(() => selectedCoachId = v),
+                              onChanged: (v) {
+                                setSheetState(() {
+                                  selectedCoachId = v;
+                                  if (v != null) {
+                                    final matched = coaches.firstWhere(
+                                      (c) => (c['id'] as num?)?.toInt() == v,
+                                      orElse: () => <String, dynamic>{},
+                                    );
+                                    selectedCoachName = (matched['full_name'] ?? matched['username'] ?? 'Тренер').toString();
+                                  } else {
+                                    selectedCoachName = null;
+                                  }
+                                });
+                              },
                             );
                           },
                         ),
+
+                        // --- Additional services ---
+                        const SizedBox(height: 16),
+                        const Text('Дополнительные услуги', style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        _serviceCheckbox(
+                          isDark: isDark,
+                          icon: Icons.sports_tennis,
+                          title: 'Аренда инвентаря',
+                          value: svcInventory,
+                          onChanged: (v) => setSheetState(() => svcInventory = v ?? false),
+                        ),
+                        const SizedBox(height: 6),
+                        _serviceCheckbox(
+                          isDark: isDark,
+                          icon: Icons.spa_outlined,
+                          title: 'Восстановительные процедуры',
+                          value: svcRecovery,
+                          onChanged: (v) => setSheetState(() => svcRecovery = v ?? false),
+                        ),
+                        const SizedBox(height: 6),
+                        _serviceCheckbox(
+                          isDark: isDark,
+                          icon: Icons.local_bar_outlined,
+                          title: 'Услуги спорт-бара',
+                          value: svcSportBar,
+                          onChanged: (v) => setSheetState(() => svcSportBar = v ?? false),
+                        ),
+
                         const SizedBox(height: 12),
                         Row(
                           children: [
                             Expanded(
                               child: TextField(
+                                controller: promoController,
                                 textCapitalization: TextCapitalization.characters,
                                 onChanged: (v) => promoCode = v,
                                 decoration: InputDecoration(
@@ -309,7 +505,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                         ),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
-                          initialValue: paymentMethod,
+                          value: paymentMethod,
                           decoration: InputDecoration(
                             labelText: 'Способ оплаты',
                             filled: true,
@@ -333,15 +529,46 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                                 ? () => _bookCourt(
                                       ctx,
                                       courtId,
+                                      name,
                                       selectedDate,
                                       selectedTime,
                                       duration,
                                       paymentMethod,
                                       coachId: selectedCoachId,
+                                      coachName: selectedCoachName,
                                       promoCode: promoCode.trim(),
+                                      services: [
+                                        if (svcInventory) 'inventory',
+                                        if (svcRecovery) 'recovery',
+                                        if (svcSportBar) 'sport_bar',
+                                      ],
                                     )
                                 : null,
                             child: const Text('Забронировать', style: TextStyle(fontSize: 16)),
+                          ),
+                        ),
+
+                        // --- Clear form ---
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton(
+                            onPressed: () => setSheetState(() {
+                              selectedDate = DateTime.now();
+                              selectedTime = TimeOfDay(hour: DateTime.now().hour + 1, minute: 0);
+                              duration = 60;
+                              selectedCoachId = null;
+                              selectedCoachName = null;
+                              paymentMethod = 'KASPI';
+                              promoCode = '';
+                              promoController.clear();
+                              svcInventory = false;
+                              svcRecovery = false;
+                              svcSportBar = false;
+                              coachesFuture = loadCoaches();
+                              availFuture = loadAvailability();
+                            }),
+                            child: const Text('Очистить', style: TextStyle(color: Colors.grey)),
                           ),
                         ),
                       ],
@@ -359,12 +586,15 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
   Future<void> _bookCourt(
     BuildContext ctx,
     int courtId,
+    String courtName,
     DateTime date,
     TimeOfDay time,
     int duration,
     String paymentMethod, {
     int? coachId,
+    String? coachName,
     String? promoCode,
+    List<String> services = const [],
   }) async {
     final start = DateTime(date.year, date.month, date.day, time.hour, time.minute).toUtc();
     final messenger = ScaffoldMessenger.of(context);
@@ -378,6 +608,8 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     if (coachId != null) payload['coach'] = coachId;
     final promo = (promoCode ?? '').trim();
     if (promo.isNotEmpty) payload['promo_code'] = promo;
+    if (services.isNotEmpty) payload['services'] = services;
+
     try {
       final availability = await AppScope.instance.bookingRepository.checkAvailability(
         courtId: courtId,
@@ -398,20 +630,51 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
         'duration': duration,
       };
       if (coachId != null) previewPayload['coach_id'] = coachId;
+      if (services.isNotEmpty) previewPayload['services'] = services;
+      if (promo.isNotEmpty) previewPayload['promo_code'] = promo;
+
       final preview = await AppScope.instance.bookingRepository.pricePreview(previewPayload);
       if (!mounted) return;
+
+      final timeStr = '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+      final serviceLabels = _serviceLabels(services);
+
       final ok = await showDialog<bool>(
         context: context,
         builder: (c) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: const Text('Подтвердить бронь'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Сумма: ${preview['total'] ?? '-'} тг'),
-              if (preview['discount'] != null) Text('Скидка: ${preview['discount']}'),
-            ],
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(courtName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                const SizedBox(height: 4),
+                Text('${_formatDate(date)}, $timeStr • $duration мин', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                if (coachName != null) ...[
+                  const SizedBox(height: 2),
+                  Text('Тренер: $coachName', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                ],
+                if (serviceLabels.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text('Услуги: ${serviceLabels.join(', ')}', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                ],
+                const SizedBox(height: 14),
+                const Divider(),
+                const SizedBox(height: 6),
+                _priceRow('Аренда корта', preview['base_price']),
+                if (coachId != null && preview['coach_price'] != null)
+                  _priceRow('Тренер', preview['coach_price']),
+                if (services.isNotEmpty && (preview['services_price'] ?? preview['service_total']) != null)
+                  _priceRow('Доп. услуги', preview['services_price'] ?? preview['service_total']),
+                if (_discountValue(preview) != null)
+                  _priceRow('Скидка', '-${_discountValue(preview)}', isDiscount: true),
+                const Divider(),
+                const SizedBox(height: 4),
+                _priceRow('ИТОГО', preview['total'], isBold: true),
+              ],
+            ),
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Отмена')),
@@ -431,6 +694,14 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
       if (!mounted) return;
       messenger.showSnackBar(SnackBar(content: Text(e.toString())));
     }
+  }
+
+  String? _discountValue(Map<String, dynamic> preview) {
+    final d = preview['discount'];
+    if (d == null) return null;
+    if (d is num && d == 0) return null;
+    if (d.toString() == '0' || d.toString() == '0.00') return null;
+    return d.toString();
   }
 
   String _dateOnlyIso(DateTime date) {
@@ -895,4 +1166,76 @@ void _showModernTimePicker(BuildContext ctx, TimeOfDay current, ValueChanged<Tim
       ),
     ),
   );
+}
+
+Widget _serviceCheckbox({
+  required bool isDark,
+  required IconData icon,
+  required String title,
+  required bool value,
+  required ValueChanged<bool?> onChanged,
+}) {
+  return Container(
+    decoration: BoxDecoration(
+      color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.withValues(alpha: 0.06),
+      borderRadius: BorderRadius.circular(14),
+    ),
+    child: CheckboxListTile(
+      value: value,
+      onChanged: onChanged,
+      title: Row(
+        children: [
+          Icon(icon, size: 20, color: AppTheme.primaryColor),
+          const SizedBox(width: 10),
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 14))),
+        ],
+      ),
+      controlAffinity: ListTileControlAffinity.trailing,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      dense: true,
+    ),
+  );
+}
+
+Widget _priceRow(String label, dynamic amount, {bool isDiscount = false, bool isBold = false}) {
+  final text = amount?.toString() ?? '—';
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 3),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: TextStyle(
+            fontWeight: isBold ? FontWeight.bold : FontWeight.normal,
+            fontSize: isBold ? 16 : 14,
+          ),
+        ),
+        Text(
+          '$text тг',
+          style: TextStyle(
+            fontWeight: isBold ? FontWeight.bold : FontWeight.w600,
+            fontSize: isBold ? 16 : 14,
+            color: isDiscount ? Colors.green : null,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+List<String> _serviceLabels(List<String> services) {
+  return services.map((s) {
+    switch (s) {
+      case 'inventory':
+        return 'Аренда инвентаря';
+      case 'recovery':
+        return 'Восстановительные процедуры';
+      case 'sport_bar':
+        return 'Услуги спорт-бара';
+      default:
+        return s;
+    }
+  }).toList();
 }
