@@ -59,6 +59,12 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     bool svcInventory = false;
     bool svcRecovery = false;
     bool svcSportBar = false;
+    String? promoMessage;
+    Color? promoColor;
+    bool promoValid = false;
+    String promoTitle = '';
+    String promoDiscountType = '';
+    double promoDiscountValue = 0;
 
     final promoController = TextEditingController();
 
@@ -69,9 +75,11 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
         selectedDate.day,
         selectedTime.hour,
         selectedTime.minute,
-      ).toUtc();
+      );
+      final utc = slot.toUtc();
+      final iso = '${utc.year.toString().padLeft(4, '0')}-${utc.month.toString().padLeft(2, '0')}-${utc.day.toString().padLeft(2, '0')}T${utc.hour.toString().padLeft(2, '0')}:${utc.minute.toString().padLeft(2, '0')}:00Z';
       return AppScope.instance.bookingRepository.availableCoaches(
-        dateTimeIso: slot.toIso8601String(),
+        dateTimeIso: iso,
         duration: duration,
       );
     }
@@ -369,7 +377,9 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
+                        const SizedBox(height: 16),
+                        const Text('Тренер', style: TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
                         FutureBuilder<List<Map<String, dynamic>>>(
                           future: coachesFuture,
                           builder: (ctx, snap) {
@@ -390,7 +400,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                               );
                             }
                             return DropdownButtonFormField<int>(
-                              value: selectedCoachId,
+                              initialValue: selectedCoachId,
                               decoration: InputDecoration(
                                 labelText: 'Тренер (опционально)',
                                 filled: true,
@@ -457,6 +467,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                           onChanged: (v) => setSheetState(() => svcSportBar = v ?? false),
                         ),
 
+                        // --- Promo code ---
                         const SizedBox(height: 12),
                         Row(
                           children: [
@@ -464,48 +475,81 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                               child: TextField(
                                 controller: promoController,
                                 textCapitalization: TextCapitalization.characters,
-                                onChanged: (v) => promoCode = v,
+                                onChanged: (v) {
+                                  promoCode = v;
+                                  if (promoMessage != null) setSheetState(() { promoMessage = null; promoColor = null; });
+                                },
                                 decoration: InputDecoration(
-                                  labelText: 'Промокод (опционально)',
+                                  labelText: 'Промокод',
+                                  hintText: 'Введите код',
                                   filled: true,
                                   fillColor: Colors.grey.withValues(alpha: 0.08),
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(14),
-                                    borderSide: BorderSide.none,
-                                  ),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                                  suffixIcon: promoMessage != null
+                                      ? Icon(promoColor == Colors.green ? Icons.check_circle : Icons.error_outline, color: promoColor, size: 20)
+                                      : null,
                                 ),
                               ),
                             ),
                             const SizedBox(width: 8),
-                            OutlinedButton(
-                              onPressed: () async {
-                                final code = promoCode.trim();
-                                if (code.isEmpty) return;
-                                try {
-                                  final result = await AppScope.instance.secondaryRepository.validatePromo(code);
-                                  if (!ctx.mounted) return;
-                                  final valid = result['valid'] == true;
-                                  final message = valid
-                                      ? 'Промокод активен: ${result['title'] ?? code}'
-                                      : (result['error'] ?? 'Промокод недействителен').toString();
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    SnackBar(
-                                      content: Text(message),
-                                      backgroundColor: valid ? Colors.green : Colors.redAccent,
-                                    ),
-                                  );
-                                } catch (e) {
-                                  if (!ctx.mounted) return;
-                                  ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text(e.toString())));
-                                }
-                              },
-                              child: const Text('Проверить'),
+                            SizedBox(
+                              height: 48,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppTheme.primaryColor,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                ),
+                                onPressed: () async {
+                                  final code = promoCode.trim();
+                                  if (code.isEmpty) return;
+                                  try {
+                                    final result = await AppScope.instance.secondaryRepository.validatePromo(code);
+                                    if (!ctx.mounted) return;
+                                    final valid = result['valid'] == true;
+                                    final title = (result['title'] ?? result['name'] ?? '').toString();
+                                    final discType = (result['discount_type'] ?? '').toString();
+                                    final discVal = double.tryParse((result['discount_value'] ?? '0').toString()) ?? 0;
+                                    final discLabel = discType == 'PERCENT' ? '${discVal.toStringAsFixed(0)}%' : (discVal > 0 ? '${discVal.toStringAsFixed(0)} тг' : '');
+                                    setSheetState(() {
+                                      if (valid) {
+                                        promoValid = true;
+                                        promoTitle = title;
+                                        promoDiscountType = discType;
+                                        promoDiscountValue = discVal;
+                                        promoMessage = title.isNotEmpty
+                                            ? 'Промокод «$title» применён${discLabel.isNotEmpty ? ' — скидка $discLabel' : ''}'
+                                            : 'Промокод применён';
+                                        promoColor = Colors.green;
+                                      } else {
+                                        promoValid = false;
+                                        promoDiscountValue = 0;
+                                        promoMessage = (result['error'] ?? result['message'] ?? result['detail'] ?? 'Промокод недействителен').toString();
+                                        promoColor = Colors.redAccent;
+                                      }
+                                    });
+                                  } catch (e) {
+                                    if (!ctx.mounted) return;
+                                    setSheetState(() {
+                                      promoValid = false;
+                                      promoDiscountValue = 0;
+                                      promoMessage = e.toString().replaceAll('Exception: ', '');
+                                      promoColor = Colors.redAccent;
+                                    });
+                                  }
+                                },
+                                child: const Text('Применить'),
+                              ),
                             ),
                           ],
                         ),
+                        if (promoMessage != null) ...[
+                          const SizedBox(height: 6),
+                          Text(promoMessage!, style: TextStyle(fontSize: 12, color: promoColor, fontWeight: FontWeight.w500)),
+                        ],
                         const SizedBox(height: 12),
                         DropdownButtonFormField<String>(
-                          value: paymentMethod,
+                          initialValue: paymentMethod,
                           decoration: InputDecoration(
                             labelText: 'Способ оплаты',
                             filled: true,
@@ -534,6 +578,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                                       selectedTime,
                                       duration,
                                       paymentMethod,
+                                      courtPricePerHour: double.tryParse(price) ?? 0,
                                       coachId: selectedCoachId,
                                       coachName: selectedCoachName,
                                       promoCode: promoCode.trim(),
@@ -542,6 +587,10 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                                         if (svcRecovery) 'recovery',
                                         if (svcSportBar) 'sport_bar',
                                       ],
+                                      promoApplied: promoValid,
+                                      promoDiscountType: promoDiscountType,
+                                      promoDiscountValue: promoDiscountValue,
+                                      promoLabel: promoTitle,
                                     )
                                 : null,
                             child: const Text('Забронировать', style: TextStyle(fontSize: 16)),
@@ -565,6 +614,12 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                               svcInventory = false;
                               svcRecovery = false;
                               svcSportBar = false;
+                              promoMessage = null;
+                              promoColor = null;
+                              promoValid = false;
+                              promoTitle = '';
+                              promoDiscountType = '';
+                              promoDiscountValue = 0;
                               coachesFuture = loadCoaches();
                               availFuture = loadAvailability();
                             }),
@@ -591,10 +646,15 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     TimeOfDay time,
     int duration,
     String paymentMethod, {
+    double courtPricePerHour = 0,
     int? coachId,
     String? coachName,
     String? promoCode,
     List<String> services = const [],
+    bool promoApplied = false,
+    String promoDiscountType = '',
+    double promoDiscountValue = 0,
+    String promoLabel = '',
   }) async {
     final start = DateTime(date.year, date.month, date.day, time.hour, time.minute).toUtc();
     final messenger = ScaffoldMessenger.of(context);
@@ -608,7 +668,6 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     if (coachId != null) payload['coach'] = coachId;
     final promo = (promoCode ?? '').trim();
     if (promo.isNotEmpty) payload['promo_code'] = promo;
-    if (services.isNotEmpty) payload['services'] = services;
 
     try {
       final availability = await AppScope.instance.bookingRepository.checkAvailability(
@@ -616,12 +675,11 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
         dateIso: _dateOnlyIso(date),
       );
       if ((availability['is_holiday'] == true)) {
-        final reason = (availability['reason'] ?? 'Корт недоступен в выбранную дату').toString();
-        throw Exception(reason);
+        throw (availability['reason'] ?? 'Корт недоступен в выбранную дату').toString();
       }
       final busySlots = (availability['busy_slots'] as List?) ?? const [];
       if (_isRequestedSlotBusy(time: time, duration: duration, busySlots: busySlots)) {
-        throw Exception('Этот временной слот уже занят. Выберите другое время.');
+        throw 'Этот временной слот уже занят. Выберите другое время.';
       }
 
       final previewPayload = <String, dynamic>{
@@ -630,7 +688,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
         'duration': duration,
       };
       if (coachId != null) previewPayload['coach_id'] = coachId;
-      if (services.isNotEmpty) previewPayload['services'] = services;
+      // services are informational only (no real IDs from hardcoded checkboxes)
       if (promo.isNotEmpty) previewPayload['promo_code'] = promo;
 
       final preview = await AppScope.instance.bookingRepository.pricePreview(previewPayload);
@@ -638,6 +696,29 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
 
       final timeStr = '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
       final serviceLabels = _serviceLabels(services);
+
+      final courtCost = courtPricePerHour * duration / 60;
+
+      final breakdown = (preview['breakdown'] as Map?)?.cast<String, dynamic>() ?? {};
+      final bCoach = _parseDouble(breakdown['coach'] ?? preview['coach_price']);
+      final bServices = _parseDouble(breakdown['services'] ?? preview['services_price'] ?? preview['service_total']);
+      final total = _parseDouble(preview['total']);
+      final membershipApplied = preview['membership_applied'] == true;
+
+      final actualCourtCost = membershipApplied ? 0.0 : courtCost;
+      final subtotalBeforeDiscount = actualCourtCost + bCoach + bServices;
+
+      double discountAmount = 0;
+      if (promoApplied && promoDiscountValue > 0) {
+        if (promoDiscountType == 'PERCENT') {
+          discountAmount = (courtCost + bCoach + bServices) * promoDiscountValue / 100;
+        } else {
+          discountAmount = promoDiscountValue;
+        }
+      }
+      if (discountAmount == 0 && subtotalBeforeDiscount > total && total >= 0) {
+        discountAmount = subtotalBeforeDiscount - total;
+      }
 
       final ok = await showDialog<bool>(
         context: context,
@@ -660,19 +741,41 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                   const SizedBox(height: 2),
                   Text('Услуги: ${serviceLabels.join(', ')}', style: const TextStyle(color: Colors.grey, fontSize: 13)),
                 ],
+                if (membershipApplied) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+                    child: Text('Абонемент: ${preview['membership_name'] ?? 'Активен'}', style: const TextStyle(color: AppTheme.primaryColor, fontSize: 12, fontWeight: FontWeight.w600)),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 const Divider(),
                 const SizedBox(height: 6),
-                _priceRow('Аренда корта', preview['base_price']),
-                if (coachId != null && preview['coach_price'] != null)
-                  _priceRow('Тренер', preview['coach_price']),
-                if (services.isNotEmpty && (preview['services_price'] ?? preview['service_total']) != null)
-                  _priceRow('Доп. услуги', preview['services_price'] ?? preview['service_total']),
-                if (_discountValue(preview) != null)
-                  _priceRow('Скидка', '-${_discountValue(preview)}', isDiscount: true),
+                if (membershipApplied)
+                  _priceRow('Аренда корта', '0 (абонемент)')
+                else
+                  _priceRow('Аренда корта', courtCost.toStringAsFixed(0)),
+                if (coachId != null && bCoach > 0)
+                  _priceRow('Тренер', bCoach.toStringAsFixed(0)),
+                if (services.isNotEmpty && bServices > 0)
+                  _priceRow('Доп. услуги', bServices.toStringAsFixed(0)),
+                if (promoApplied && promoDiscountValue > 0 && discountAmount > 0) ...[
+                  const SizedBox(height: 4),
+                  _promoDiscountRow(
+                    promoCode: promo,
+                    promoTitle: promoLabel,
+                    discountType: promoDiscountType,
+                    discountValue: promoDiscountValue,
+                    discountAmount: discountAmount,
+                  ),
+                ] else if (discountAmount > 0) ...[
+                  const SizedBox(height: 4),
+                  _fallbackDiscountRow(preview, promo),
+                ],
                 const Divider(),
                 const SizedBox(height: 4),
-                _priceRow('ИТОГО', preview['total'], isBold: true),
+                _priceRow('ИТОГО', (total - discountAmount).toStringAsFixed(0), isBold: true),
               ],
             ),
           ),
@@ -692,16 +795,88 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
       setState(_reloadAll);
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text(e.toString())));
+      final msg = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      messenger.showSnackBar(SnackBar(content: Text(msg)));
     }
   }
 
   String? _discountValue(Map<String, dynamic> preview) {
-    final d = preview['discount'];
+    final d = preview['discount'] ?? preview['discount_amount'];
     if (d == null) return null;
     if (d is num && d == 0) return null;
     if (d.toString() == '0' || d.toString() == '0.00') return null;
     return d.toString();
+  }
+
+  double _parseDouble(dynamic v) {
+    if (v == null) return 0;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v.toString()) ?? 0;
+  }
+
+  Widget _promoDiscountRow({
+    required String promoCode,
+    required String promoTitle,
+    required String discountType,
+    required double discountValue,
+    required double discountAmount,
+  }) {
+    final pctLabel = discountType == 'PERCENT' ? '${discountValue.toStringAsFixed(0)}%' : '';
+    final amountLabel = '-${discountAmount.toStringAsFixed(0)} тг';
+    final name = promoTitle.isNotEmpty ? promoTitle : promoCode;
+    final label = pctLabel.isNotEmpty ? '«$name» (-$pctLabel)' : '«$name»';
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.local_offer_rounded, size: 16, color: Colors.green),
+                const SizedBox(width: 6),
+                Flexible(child: Text(label, style: const TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+          ),
+          Text(amountLabel, style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 14)),
+        ],
+      ),
+    );
+  }
+
+  Widget _fallbackDiscountRow(Map<String, dynamic> preview, String promoCode) {
+    final discountAmount = _discountValue(preview) ?? '0';
+    final label = promoCode.isNotEmpty ? 'Промокод «$promoCode»' : 'Скидка';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.green.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Flexible(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.local_offer_rounded, size: 16, color: Colors.green),
+                const SizedBox(width: 6),
+                Flexible(child: Text(label, style: const TextStyle(color: Colors.green, fontSize: 13, fontWeight: FontWeight.w600), overflow: TextOverflow.ellipsis)),
+              ],
+            ),
+          ),
+          Text('-$discountAmount тг', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold, fontSize: 14)),
+        ],
+      ),
+    );
   }
 
   String _dateOnlyIso(DateTime date) {
@@ -914,53 +1089,381 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
             ),
           );
         }
+        final isDark = Theme.of(context).brightness == Brightness.dark;
         return RefreshIndicator(
           onRefresh: () async => setState(_reloadAll),
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: items.length,
-            itemBuilder: (context, i) {
-              final b = items[i];
-              final courtName = (b['court_name'] ?? b['court'] ?? '-').toString();
-              final startTime = (b['start_time'] ?? '').toString();
-              final status = (b['status'] ?? '').toString();
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 4, height: 44,
-                      decoration: BoxDecoration(color: AppTheme.primaryColor, borderRadius: BorderRadius.circular(2)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(courtName, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text(startTime, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                          Text(status, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => _cancelBooking(b),
-                      child: const Text('Отмена', style: TextStyle(color: Colors.redAccent)),
-                    ),
-                  ],
-                ),
-              );
-            },
+            itemBuilder: (context, i) => _bookingCard(items[i], isDark),
           ),
         );
       },
     );
+  }
+
+  Widget _bookingCard(Map<String, dynamic> b, bool isDark) {
+    final courtName = (b['court_name'] ?? b['court'] ?? 'Корт').toString();
+    final status = (b['status'] ?? '').toString().toUpperCase();
+    final startRaw = (b['start_time'] ?? '').toString();
+    final endRaw = (b['end_time'] ?? '').toString();
+    final price = (b['price'] ?? '').toString();
+    final coachName = (b['coach_name'] ?? '').toString();
+    final isPaid = b['is_paid'] == true;
+
+    String dateLabel = '';
+    String timeLabel = '';
+    final dt = DateTime.tryParse(startRaw);
+    if (dt != null) {
+      final local = dt.toLocal();
+      dateLabel = '${local.day.toString().padLeft(2, '0')}.${local.month.toString().padLeft(2, '0')}.${local.year}';
+      timeLabel = '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+      final dtEnd = DateTime.tryParse(endRaw)?.toLocal();
+      if (dtEnd != null) {
+        timeLabel += ' – ${dtEnd.hour.toString().padLeft(2, '0')}:${dtEnd.minute.toString().padLeft(2, '0')}';
+      }
+    } else {
+      dateLabel = startRaw;
+    }
+
+    final statusColor = _bookingStatusColor(status);
+    final statusLabel = _bookingStatusLabel(status);
+
+    return GestureDetector(
+      onTap: () => _showBookingDetail(b),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 10, offset: const Offset(0, 4))],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primaryColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.sports_tennis, color: AppTheme.primaryColor, size: 22),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(courtName, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                      const SizedBox(height: 2),
+                      if (coachName.isNotEmpty)
+                        Text('Тренер: $coachName', style: TextStyle(color: Colors.grey[600], fontSize: 12)),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(statusLabel, style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.grey.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_today_rounded, size: 15, color: Colors.grey[500]),
+                        const SizedBox(width: 6),
+                        Text(dateLabel, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(Icons.schedule_rounded, size: 15, color: Colors.grey[500]),
+                        const SizedBox(width: 6),
+                        Text(timeLabel, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (price.isNotEmpty && price != '0' && price != '0.00') ...[
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text('$price тг', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: AppTheme.primaryColor)),
+                  if (isPaid)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: Colors.green.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+                      child: const Text('Оплачено', style: TextStyle(color: Colors.green, fontSize: 11, fontWeight: FontWeight.w600)),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(6)),
+                      child: const Text('Не оплачено', style: TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.w600)),
+                    ),
+                ],
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBookingDetail(Map<String, dynamic> b) async {
+    final bookingId = (b['id'] as num?)?.toInt();
+
+    Map<String, dynamic> detail = b;
+    if (bookingId != null) {
+      try {
+        detail = await AppScope.instance.bookingRepository.bookingDetail(bookingId);
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
+
+    final courtName = (detail['court_name'] ?? detail['court'] ?? 'Корт').toString();
+    final status = (detail['status'] ?? '').toString().toUpperCase();
+    final startRaw = (detail['start_time'] ?? '').toString();
+    final endRaw = (detail['end_time'] ?? '').toString();
+    final price = (detail['price'] ?? '').toString();
+    final coachName = (detail['coach_name'] ?? '').toString();
+    final isPaid = detail['is_paid'] == true;
+    final durationHours = detail['duration_hours'];
+    final participants = (detail['participants_names'] as List?)?.map((e) => e.toString()).toList() ?? [];
+    final servicesList = (detail['services'] as List?) ?? [];
+    final createdAt = (detail['created_at'] ?? '').toString();
+
+    String dateLabel = '';
+    String timeLabel = '';
+    final dt = DateTime.tryParse(startRaw);
+    if (dt != null) {
+      final local = dt.toLocal();
+      dateLabel = '${local.day.toString().padLeft(2, '0')}.${local.month.toString().padLeft(2, '0')}.${local.year}';
+      timeLabel = '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+      final dtEnd = DateTime.tryParse(endRaw)?.toLocal();
+      if (dtEnd != null) {
+        timeLabel += ' – ${dtEnd.hour.toString().padLeft(2, '0')}:${dtEnd.minute.toString().padLeft(2, '0')}';
+      }
+    }
+
+    final statusColor = _bookingStatusColor(status);
+    final statusLabel = _bookingStatusLabel(status);
+    final canCancel = status != 'CANCELED' && status != 'COMPLETED';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Container(
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.8),
+        decoration: BoxDecoration(
+          color: Theme.of(ctx).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[400], borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(child: Text(courtName, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold))),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                    decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+                    child: Text(statusLabel, style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.bold)),
+                  ),
+                ],
+              ),
+              if (bookingId != null) ...[
+                const SizedBox(height: 4),
+                Text('Бронь #$bookingId', style: TextStyle(color: Colors.grey[500], fontSize: 12)),
+              ],
+              const SizedBox(height: 20),
+
+              _detailRow(Icons.calendar_today_rounded, 'Дата', dateLabel),
+              _detailRow(Icons.schedule_rounded, 'Время', timeLabel),
+              if (durationHours != null)
+                _detailRow(Icons.timelapse_rounded, 'Длительность', '$durationHours ч'),
+              if (coachName.isNotEmpty)
+                _detailRow(Icons.person_outline_rounded, 'Тренер', coachName),
+              if (participants.isNotEmpty)
+                _detailRow(Icons.group_outlined, 'Участники', participants.join(', ')),
+
+              if (servicesList.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                const Text('Услуги', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                const SizedBox(height: 6),
+                ...servicesList.map((s) {
+                  final sMap = s is Map ? Map<String, dynamic>.from(s) : <String, dynamic>{};
+                  final sName = (sMap['service_name'] ?? '').toString();
+                  final sQty = (sMap['quantity'] ?? 1).toString();
+                  final sPrice = (sMap['price_at_moment'] ?? '').toString();
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.check_circle_outline, size: 16, color: AppTheme.primaryColor),
+                        const SizedBox(width: 8),
+                        Expanded(child: Text('$sName × $sQty', style: const TextStyle(fontSize: 13))),
+                        if (sPrice.isNotEmpty) Text('$sPrice тг', style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+
+              const SizedBox(height: 16),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: isDark ? Colors.white.withValues(alpha: 0.04) : AppTheme.primaryColor.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text('Стоимость', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                        const SizedBox(height: 2),
+                        Text(
+                          price.isNotEmpty && price != '0' ? '$price тг' : 'Бесплатно',
+                          style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.primaryColor),
+                        ),
+                      ],
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isPaid ? Colors.green.withValues(alpha: 0.1) : Colors.orange.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(
+                        isPaid ? 'Оплачено' : 'Не оплачено',
+                        style: TextStyle(color: isPaid ? Colors.green : Colors.orange, fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              if (createdAt.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text('Создано: ${_formatIso(createdAt)}', style: TextStyle(color: Colors.grey[500], fontSize: 11)),
+              ],
+
+              if (canCancel) ...[
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: () => _confirmCancelBooking(ctx, b),
+                    icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
+                    label: const Text('Отменить бронирование', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600)),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.redAccent),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _detailRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: AppTheme.primaryColor),
+          const SizedBox(width: 10),
+          Text('$label: ', style: TextStyle(color: Colors.grey[600], fontSize: 14)),
+          Expanded(child: Text(value, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
+        ],
+      ),
+    );
+  }
+
+  String _formatIso(String iso) {
+    final dt = DateTime.tryParse(iso)?.toLocal();
+    if (dt == null) return iso;
+    return '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+  }
+
+  void _confirmCancelBooking(BuildContext sheetCtx, Map<String, dynamic> booking) async {
+    final nav = Navigator.of(sheetCtx);
+    final confirmed = await showDialog<bool>(
+      context: sheetCtx,
+      builder: (c) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Отменить бронирование?'),
+        content: const Text('Вы уверены, что хотите отменить эту бронь? Это действие нельзя отменить.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Нет')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(c, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            child: const Text('Да, отменить'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    nav.pop();
+    await _cancelBooking(booking);
+  }
+
+  Color _bookingStatusColor(String status) {
+    switch (status) {
+      case 'CONFIRMED': return Colors.green;
+      case 'PENDING': return Colors.orange;
+      case 'CANCELED': return Colors.red;
+      case 'COMPLETED': return Colors.blueGrey;
+      default: return Colors.grey;
+    }
+  }
+
+  String _bookingStatusLabel(String status) {
+    switch (status) {
+      case 'CONFIRMED': return 'Подтверждена';
+      case 'PENDING': return 'Ожидание';
+      case 'CANCELED': return 'Отменена';
+      case 'COMPLETED': return 'Завершена';
+      default: return status;
+    }
   }
 
   Widget _buildMemberships() {
@@ -1116,7 +1619,7 @@ void _showModernDatePicker(BuildContext ctx, DateTime current, ValueChanged<Date
             child: CupertinoDatePicker(
               mode: CupertinoDatePickerMode.date,
               initialDateTime: current,
-              minimumDate: DateTime.now().subtract(const Duration(days: 1)),
+              minimumDate: DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day),
               maximumDate: DateTime.now().add(const Duration(days: 60)),
               onDateTimeChanged: (d) => temp = d,
             ),
@@ -1198,6 +1701,17 @@ Widget _serviceCheckbox({
   );
 }
 
+List<String> _serviceLabels(List<String> services) {
+  return services.map((s) {
+    switch (s) {
+      case 'inventory': return 'Аренда инвентаря';
+      case 'recovery': return 'Восстановительные процедуры';
+      case 'sport_bar': return 'Услуги спорт-бара';
+      default: return s;
+    }
+  }).toList();
+}
+
 Widget _priceRow(String label, dynamic amount, {bool isDiscount = false, bool isBold = false}) {
   final text = amount?.toString() ?? '—';
   return Padding(
@@ -1225,17 +1739,3 @@ Widget _priceRow(String label, dynamic amount, {bool isDiscount = false, bool is
   );
 }
 
-List<String> _serviceLabels(List<String> services) {
-  return services.map((s) {
-    switch (s) {
-      case 'inventory':
-        return 'Аренда инвентаря';
-      case 'recovery':
-        return 'Восстановительные процедуры';
-      case 'sport_bar':
-        return 'Услуги спорт-бара';
-      default:
-        return s;
-    }
-  }).toList();
-}
