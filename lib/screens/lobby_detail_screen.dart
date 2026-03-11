@@ -200,6 +200,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     final scheduledTime = (lobby['scheduled_time'] ?? '').toString();
     final estimatedShare = (lobby['estimated_share'] ?? '').toString();
     final creatorName = (lobby['creator_name'] ?? '').toString();
+    final trainerName = (lobby['trainer_name'] ?? '').toString();
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -229,6 +230,14 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           const SizedBox(height: 8),
           if (creatorName.isNotEmpty)
             Text('Организатор: $creatorName', style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 13)),
+          if (trainerName.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Row(children: [
+              const Icon(Icons.sports_rounded, color: Colors.amberAccent, size: 15),
+              const SizedBox(width: 5),
+              Text('Тренер: $trainerName', style: const TextStyle(color: Colors.amberAccent, fontSize: 13, fontWeight: FontWeight.w600)),
+            ]),
+          ],
           const SizedBox(height: 10),
           Row(
             children: [

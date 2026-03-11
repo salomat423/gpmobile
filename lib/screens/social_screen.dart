@@ -1142,6 +1142,11 @@ class _SocialScreenState extends State<SocialScreen>
     final eloMinCtrl = TextEditingController();
     final eloMaxCtrl = TextEditingController();
     String format = 'DOUBLE';
+    int? selectedTrainerId;
+    List<Map<String, dynamic>> coaches = [];
+    try {
+      coaches = await AppScope.instance.authRepository.coaches();
+    } catch (_) {}
 
     await showModalBottomSheet(
       context: context,
@@ -1248,6 +1253,44 @@ class _SocialScreenState extends State<SocialScreen>
                   ],
                 ),
                 const SizedBox(height: 12),
+                // Trainer selection
+                if (coaches.isNotEmpty) ...[
+                  const Text('Тренер',
+                      style: TextStyle(fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 8),
+                  DropdownButtonFormField<int>(
+                    value: selectedTrainerId,
+                    decoration: InputDecoration(
+                      hintText: 'Без тренера',
+                      filled: true,
+                      fillColor: Colors.grey.withValues(alpha: 0.1),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none,
+                      ),
+                      prefixIcon: const Icon(Icons.sports_rounded, size: 20),
+                    ),
+                    items: [
+                      const DropdownMenuItem<int>(
+                        value: null,
+                        child: Text('Без тренера',
+                            style: TextStyle(color: Colors.grey)),
+                      ),
+                      ...coaches.map((c) {
+                        final cId = (c['id'] as num).toInt();
+                        final name = (c['full_name'] ??
+                                c['username'] ??
+                                'Тренер $cId')
+                            .toString();
+                        return DropdownMenuItem<int>(
+                            value: cId, child: Text(name));
+                      }),
+                    ],
+                    onChanged: (v) =>
+                        setModalState(() => selectedTrainerId = v),
+                  ),
+                  const SizedBox(height: 12),
+                ],
                 TextField(
                   controller: commentCtrl,
                   maxLines: 2,
@@ -1288,11 +1331,12 @@ class _SocialScreenState extends State<SocialScreen>
                             eloMaxCtrl.text.trim());
                         if (min != null) payload['elo_min'] = min;
                         if (max != null) payload['elo_max'] = max;
-                        if (commentCtrl.text
-                            .trim()
-                            .isNotEmpty) {
+                        if (commentCtrl.text.trim().isNotEmpty) {
                           payload['comment'] =
                               commentCtrl.text.trim();
+                        }
+                        if (selectedTrainerId != null) {
+                          payload['trainer'] = selectedTrainerId;
                         }
                         final lobby = await AppScope
                             .instance.socialRepository
