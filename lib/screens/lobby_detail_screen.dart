@@ -473,24 +473,26 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               label: const Text('Отменить участие', style: TextStyle(color: Colors.redAccent)),
             ),
           ),
-        // Creator: close lobby at any non-terminal status
-        if (isCreator && status != 'PAID' && status != 'CLOSED')
+        // Creator: close lobby at any non-terminal status (including PAID)
+        if (isCreator && status != 'CLOSED')
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: OutlinedButton.icon(
               onPressed: () => _confirmAndDo(
-                title: 'Закрыть лобби?',
-                message: status == 'BOOKED'
-                    ? 'Бронь будет отменена. Возврат средств зависит от политики клуба.'
-                    : 'Лобби будет закрыто для всех участников.',
-                confirmLabel: 'Закрыть',
+                title: 'Отменить лобби?',
+                message: status == 'PAID'
+                    ? 'Все участники уже оплатили. Лобби будет отменено. Возврат средств осуществляется согласно политике клуба.'
+                    : status == 'BOOKED'
+                        ? 'Бронь будет отменена. Возврат средств зависит от политики клуба.'
+                        : 'Лобби будет закрыто для всех участников.',
+                confirmLabel: 'Отменить лобби',
                 isDestructive: true,
                 action: () => AppScope.instance.socialRepository.closeLobby(id),
-                successMsg: 'Лобби закрыто',
+                successMsg: 'Лобби отменено',
               ),
-              icon: Icon(Icons.close_rounded, color: Colors.grey[600]),
-              label: Text('Закрыть лобби', style: TextStyle(color: Colors.grey[600])),
-              style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.grey.withValues(alpha: 0.3))),
+              icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
+              label: const Text('Отменить лобби', style: TextStyle(color: Colors.redAccent)),
+              style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.redAccent)),
             ),
           ),
       ],
