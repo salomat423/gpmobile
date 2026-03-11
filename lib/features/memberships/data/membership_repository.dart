@@ -5,12 +5,15 @@ class MembershipRepository {
   final ApiClient _api;
 
   Future<List<Map<String, dynamic>>> types() async {
-    final data = await _api.get('/memberships/types/');
+    final data = await _api.get('/memberships/plans/');
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  Future<Map<String, dynamic>> buy(int typeId) async {
-    final data = await _api.post('/memberships/buy/$typeId/');
+  Future<Map<String, dynamic>> buy(int planId, {String paymentMethod = 'KASPI'}) async {
+    final data = await _api.post('/memberships/purchase/', data: {
+      'plan_id': planId,
+      'payment_method': paymentMethod,
+    });
     return Map<String, dynamic>.from(data as Map);
   }
 

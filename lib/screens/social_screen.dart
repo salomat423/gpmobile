@@ -2021,8 +2021,8 @@ class _SocialScreenState extends State<SocialScreen>
                     ? allItems
                     : allItems
                         .where((it) =>
-                            (it['type'] ?? '').toString() ==
-                            _feedFilter)
+                            (it['type'] ?? '').toString().toUpperCase() ==
+                            _feedFilter.toUpperCase())
                         .toList();
                 if (allItems.isEmpty) {
                   return Center(
@@ -2063,13 +2063,13 @@ class _SocialScreenState extends State<SocialScreen>
   Widget _feedCard(Map<String, dynamic> item) {
     final id = (item['id'] as num?)?.toInt() ?? 0;
     final type = (item['type'] ?? '').toString();
-    final text = (item['text'] ?? '').toString();
+    final text = (item['description'] ?? item['text'] ?? '').toString();
     final userName =
         (item['user_name'] ?? '').toString();
     final userAvatar =
         (item['user_avatar'] ?? '').toString();
     final createdAt =
-        (item['created_at'] ?? '').toString();
+        (item['date'] ?? item['created_at'] ?? '').toString();
     final liked = _likedFeedItems.contains(id);
     final avatarUrl = userAvatar.isNotEmpty
         ? userAvatar
@@ -2311,23 +2311,23 @@ const List<Map<String, dynamic>> _kAchievements = [
 
 const Map<String, Map<String, dynamic>> _kFeedFilters = {
   'all': {'label': 'Все', 'icon': Icons.dynamic_feed_rounded},
-  'match': {'label': 'Матчи', 'icon': Icons.sports_tennis},
-  'achievement': {'label': 'Достижения', 'icon': Icons.star_rounded},
-  'rank': {'label': 'Ранг', 'icon': Icons.arrow_upward_rounded},
-  'tournament': {'label': 'Турниры', 'icon': Icons.emoji_events_rounded},
+  'MATCH': {'label': 'Матчи', 'icon': Icons.sports_tennis},
+  'ACHIEVEMENT': {'label': 'Достижения', 'icon': Icons.star_rounded},
+  'RANK': {'label': 'Ранг', 'icon': Icons.arrow_upward_rounded},
+  'TOURNAMENT': {'label': 'Турниры', 'icon': Icons.emoji_events_rounded},
 };
 
 // ─── Feed helpers ───
 
 IconData _feedTypeIcon(String type) {
-  switch (type) {
-    case 'match':
+  switch (type.toUpperCase()) {
+    case 'MATCH':
       return Icons.sports_tennis;
-    case 'achievement':
+    case 'ACHIEVEMENT':
       return Icons.star_rounded;
-    case 'rank':
+    case 'RANK':
       return Icons.arrow_upward_rounded;
-    case 'tournament':
+    case 'TOURNAMENT':
       return Icons.emoji_events_rounded;
     default:
       return Icons.notifications_rounded;
@@ -2335,14 +2335,14 @@ IconData _feedTypeIcon(String type) {
 }
 
 Color _feedTypeColor(String type) {
-  switch (type) {
-    case 'match':
+  switch (type.toUpperCase()) {
+    case 'MATCH':
       return Colors.blue;
-    case 'achievement':
+    case 'ACHIEVEMENT':
       return Colors.amber;
-    case 'rank':
+    case 'RANK':
       return Colors.green;
-    case 'tournament':
+    case 'TOURNAMENT':
       return Colors.purple;
     default:
       return Colors.grey;

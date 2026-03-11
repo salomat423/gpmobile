@@ -42,11 +42,11 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     if (courtId == null) return;
 
     final name = (court['name'] ?? 'Корт').toString();
-    final courtType = (court['court_type'] ?? '').toString();
-    final price = (court['price_per_hour'] ?? '—').toString();
+    final courtType = (court['sport_type'] ?? court['court_type'] ?? '').toString();
+    final price = (court['hourly_rate'] ?? court['price_per_hour'] ?? '—').toString();
     final description = (court['description'] ?? '').toString();
-    final imageUrl = court['image']?.toString() ?? court['image_url']?.toString();
-    final isActive = court['is_active'] == true;
+    final imageUrl = court['photo']?.toString() ?? court['image']?.toString() ?? court['image_url']?.toString();
+    final isActive = court['is_available'] ?? court['is_active'] ?? true;
 
     DateTime selectedDate = DateTime.now();
     TimeOfDay selectedTime = TimeOfDay(hour: DateTime.now().hour + 1, minute: 0);
@@ -656,13 +656,19 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     double promoDiscountValue = 0,
     String promoLabel = '',
   }) async {
-    final start = DateTime(date.year, date.month, date.day, time.hour, time.minute).toUtc();
+    final startHour = time.hour.toString().padLeft(2, '0');
+    final startMin = time.minute.toString().padLeft(2, '0');
+    final endTime = TimeOfDay(hour: time.hour + (duration ~/ 60), minute: time.minute + (duration % 60));
+    final endHour = endTime.hour.toString().padLeft(2, '0');
+    final endMin = endTime.minute.toString().padLeft(2, '0');
     final messenger = ScaffoldMessenger.of(context);
     final navigator = Navigator.of(ctx);
     final payload = <String, dynamic>{
       'court': courtId,
-      'start_time': start.toIso8601String(),
-      'duration': duration,
+      'date': _dateOnlyIso(date),
+      'start_time': '$startHour:$startMin',
+      'end_time': '$endHour:$endMin',
+      'players_count': 2,
       'payment_method': paymentMethod,
     };
     if (coachId != null) payload['coach'] = coachId;
@@ -1008,10 +1014,10 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
   Widget _buildCourtCard(Map<String, dynamic> court) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final name = (court['name'] ?? 'Корт').toString();
-    final courtType = (court['court_type'] ?? '').toString();
-    final price = (court['price_per_hour'] ?? '—').toString();
-    final imageUrl = court['image']?.toString() ?? court['image_url']?.toString();
-    final isActive = court['is_active'] == true;
+    final courtType = (court['sport_type'] ?? court['court_type'] ?? '').toString();
+    final price = (court['hourly_rate'] ?? court['price_per_hour'] ?? '—').toString();
+    final imageUrl = court['photo']?.toString() ?? court['image']?.toString() ?? court['image_url']?.toString();
+    final isActive = court['is_available'] ?? court['is_active'] ?? true;
 
     return GestureDetector(
       onTap: () => _openCourtSheet(court),
@@ -1107,9 +1113,10 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     final status = (b['status'] ?? '').toString().toUpperCase();
     final startRaw = (b['start_time'] ?? '').toString();
     final endRaw = (b['end_time'] ?? '').toString();
-    final price = (b['price'] ?? '').toString();
+    final price = (b['total_cost'] ?? b['price'] ?? '').toString();
     final coachName = (b['coach_name'] ?? '').toString();
-    final isPaid = b['is_paid'] == true;
+    final paymentMethod = (b['payment_method'] ?? '').toString();
+    final isPaid = b['is_paid'] == true || paymentMethod.isNotEmpty;
 
     String dateLabel = '';
     String timeLabel = '';
@@ -1247,9 +1254,10 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     final status = (detail['status'] ?? '').toString().toUpperCase();
     final startRaw = (detail['start_time'] ?? '').toString();
     final endRaw = (detail['end_time'] ?? '').toString();
-    final price = (detail['price'] ?? '').toString();
+    final price = (detail['total_cost'] ?? detail['price'] ?? '').toString();
     final coachName = (detail['coach_name'] ?? '').toString();
-    final isPaid = detail['is_paid'] == true;
+    final paymentMethodDetail = (detail['payment_method'] ?? '').toString();
+    final isPaid = detail['is_paid'] == true || paymentMethodDetail.isNotEmpty;
     final durationHours = detail['duration_hours'];
     final participants = (detail['participants_names'] as List?)?.map((e) => e.toString()).toList() ?? [];
     final servicesList = (detail['services'] as List?) ?? [];

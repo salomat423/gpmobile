@@ -100,6 +100,7 @@ class _RatingScreenState extends State<RatingScreen> {
         final matches = (data['matches'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
         final me = (data['me'] as Map?)?.cast<String, dynamic>() ?? {};
         final myId = me['id'];
+        final myRole = (me['role'] ?? '').toString().toUpperCase();
         final current = (league['current_league'] as Map?)?.cast<String, dynamic>() ?? {};
         final elo = (league['rating_elo'] as num?)?.toInt() ?? 0;
         final leagueName = (current['name'] ?? 'Bronze').toString();
@@ -112,14 +113,18 @@ class _RatingScreenState extends State<RatingScreen> {
 
         final visibleMatches = _showAllMatches ? matches : matches.take(10).toList();
 
+        final canCreateMatch = const ['COACH_PADEL', 'COACH_FITNESS', 'ADMIN'].contains(myRole);
+
         return Scaffold(
           appBar: AppBar(title: const Text('Мой рейтинг')),
-          floatingActionButton: FloatingActionButton(
-            backgroundColor: AppTheme.primaryColor,
-            foregroundColor: AppTheme.accentColor,
-            onPressed: () => _showCreateMatchSheet(context),
-            child: const Icon(Icons.add),
-          ),
+          floatingActionButton: canCreateMatch
+              ? FloatingActionButton(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: AppTheme.accentColor,
+                  onPressed: () => _showCreateMatchSheet(context),
+                  child: const Icon(Icons.add),
+                )
+              : null,
           body: RefreshIndicator(
             onRefresh: () async => _reload(),
             child: ListView(
@@ -249,7 +254,7 @@ class _RatingScreenState extends State<RatingScreen> {
                     ),
                   ),
 
-                ...visibleMatches.map((m) => _buildMatchCard(context, m)),
+                ...visibleMatches.map((m) => _buildMatchCard(context, m, myId)),
 
                 if (!_showAllMatches && matches.length > 10)
                   Padding(
@@ -331,13 +336,19 @@ class _RatingScreenState extends State<RatingScreen> {
     );
   }
 
-  Widget _buildMatchCard(BuildContext context, Map<String, dynamic> m) {
+  Widget _buildMatchCard(BuildContext context, Map<String, dynamic> m, dynamic myId) {
     final score = (m['score'] ?? '-').toString();
     final date = (m['date_formatted'] ?? m['date'] ?? '').toString();
     final change = (m['my_elo_change'] as num?)?.toInt() ?? 0;
     final isWin = change > 0;
-    final opponentName = m['opponent_name']?.toString();
-    final opponentAvatar = m['opponent_avatar']?.toString();
+
+    final teamANames = (m['team_a_names'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final teamBNames = (m['team_b_names'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final myInA = teamANames.any((p) => p['id'] == myId);
+    final opponentTeam = myInA ? teamBNames : teamANames;
+    final opponentName = opponentTeam.isNotEmpty
+        ? opponentTeam.map((p) => p['name'] ?? '').join(', ')
+        : m['opponent_name']?.toString();
     final hasOpponent = opponentName != null && opponentName.isNotEmpty;
 
     return Container(
@@ -352,15 +363,10 @@ class _RatingScreenState extends State<RatingScreen> {
           if (hasOpponent) ...[
             CircleAvatar(
               radius: 18,
-              backgroundImage: (opponentAvatar != null && opponentAvatar.isNotEmpty)
-                  ? NetworkImage(opponentAvatar)
-                  : null,
-              child: (opponentAvatar == null || opponentAvatar.isEmpty)
-                  ? Text(
-                      opponentName[0].toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    )
-                  : null,
+              child: Text(
+                opponentName[0].toUpperCase(),
+                style: const TextStyle(fontWeight: FontWeight.bold),
+              ),
             ),
             const SizedBox(width: 12),
           ],

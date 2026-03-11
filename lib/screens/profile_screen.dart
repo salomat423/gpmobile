@@ -981,7 +981,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         final league = (((payload['league'] as Map?)?['current_league']) as Map?)?.cast<String, dynamic>() ?? {};
 
         final fullName = '${me['first_name'] ?? ''} ${me['last_name'] ?? ''}'.trim();
-        final phone = (me['phone_number'] ?? me['username'] ?? '').toString();
+        final phone = (me['phone'] ?? me['phone_number'] ?? me['username'] ?? '').toString();
         final avatar = me['avatar']?.toString();
         final elo = (me['rating_elo'] ?? 0).toString();
         final leagueName = (league['name'] ?? '—').toString();

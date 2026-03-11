@@ -76,12 +76,12 @@ class AuthRepository {
   }
 
   Future<Map<String, dynamic>> me() async {
-    final data = await _api.get('/auth/users/me/');
+    final data = await _api.get('/auth/me/');
     return Map<String, dynamic>.from(data as Map);
   }
 
   Future<Map<String, dynamic>> updateMe(Map<String, dynamic> payload) async {
-    final data = await _api.patch('/auth/users/me/', data: payload);
+    final data = await _api.patch('/auth/me/', data: payload);
     return Map<String, dynamic>.from(data as Map);
   }
 

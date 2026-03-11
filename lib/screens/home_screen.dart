@@ -127,9 +127,14 @@ class _HomeBody extends StatelessWidget {
         .map((e) => Map<String, dynamic>.from(e as Map))
         .toList();
 
-    final String userName = (user['full_name'] ?? '').toString().trim().isEmpty
-        ? 'Игрок'
-        : user['full_name'].toString();
+    final fullName = (user['full_name'] ?? '').toString().trim();
+    final firstName = (user['first_name'] ?? '').toString().trim();
+    final lastName = (user['last_name'] ?? '').toString().trim();
+    final String userName = fullName.isNotEmpty
+        ? fullName
+        : '$firstName $lastName'.trim().isNotEmpty
+            ? '$firstName $lastName'.trim()
+            : 'Игрок';
     final greeting = (data['greeting'] ?? defaultGreeting()).toString();
     final avatarUrl = user['avatar']?.toString();
 
@@ -735,10 +740,13 @@ class _HomeBody extends StatelessWidget {
 
   // --- МОЁ РАСПИСАНИЕ ---
   Widget _buildScheduleSection(BuildContext context, ThemeData theme, bool isDark) {
-    if (bookings.isEmpty) {
+    final nextBooking = data['next_booking'] as Map?;
+    if (bookings.isEmpty && nextBooking == null) {
       return const Text('Ближайших игр нет', style: TextStyle(color: Colors.grey));
     }
-    final upcoming = bookings.take(5).toList();
+    final upcoming = bookings.isNotEmpty
+        ? bookings.take(5).toList()
+        : [Map<String, dynamic>.from(nextBooking!)];
     return Column(
       children: upcoming.map((b) => _buildBookingCard(context, {
         'court': (b['court_name'] ?? b['court'] ?? 'Корт').toString(),

@@ -12,15 +12,15 @@ class _NotifType {
 }
 
 const _typeMap = <String, _NotifType>{
-  'booking': _NotifType(Icons.event, Colors.blue, 'Бронирование'),
-  'social': _NotifType(Icons.people, Colors.purple, 'Социальное'),
-  'achievement': _NotifType(Icons.emoji_events, Colors.amber, 'Достижение'),
-  'subscription': _NotifType(Icons.card_membership, Colors.teal, 'Абонемент'),
-  'financial': _NotifType(Icons.payment, Colors.green, 'Финансы'),
-  'tournament': _NotifType(Icons.sports_tennis, Colors.orange, 'Турнир'),
-  'news': _NotifType(Icons.newspaper, Colors.indigo, 'Новости'),
-  'promo': _NotifType(Icons.local_offer, Colors.pink, 'Акция'),
-  'system': _NotifType(Icons.settings, Colors.grey, 'Система'),
+  'BOOKING': _NotifType(Icons.event, Colors.blue, 'Бронирование'),
+  'MEMBERSHIP': _NotifType(Icons.card_membership, Colors.teal, 'Абонемент'),
+  'FRIEND': _NotifType(Icons.people, Colors.purple, 'Друзья'),
+  'MATCH': _NotifType(Icons.sports_tennis, Colors.orange, 'Матч'),
+  'LOBBY': _NotifType(Icons.groups, Colors.indigo, 'Лобби'),
+  'PROMO': _NotifType(Icons.local_offer, Colors.pink, 'Акция'),
+  'NEWS': _NotifType(Icons.newspaper, Colors.cyan, 'Новости'),
+  'PAYMENT': _NotifType(Icons.payment, Colors.green, 'Оплата'),
+  'SYSTEM': _NotifType(Icons.settings, Colors.grey, 'Система'),
 };
 
 String _timeAgo(String? raw) {
@@ -309,7 +309,7 @@ class _NotificationCard extends StatelessWidget {
     final id = (data['id'] as num?)?.toInt();
     final title = (data['title'] ?? '').toString();
     final body = (data['body'] ?? '').toString();
-    final type = (data['type'] ?? 'system').toString();
+    final type = (data['notification_type'] ?? data['type'] ?? 'SYSTEM').toString().toUpperCase();
     final isRead = data['is_read'] == true || data['is_read'] == 1;
     final createdAt = (data['created_at'] ?? '').toString();
     final actionUrl = (data['action_url'] ?? '').toString();
@@ -540,7 +540,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
 
   void _profileImportant() => _applyProfile({
         for (final k in _typeMap.keys)
-          k: ['booking', 'financial', 'subscription'].contains(k),
+          k: ['BOOKING', 'PAYMENT', 'MEMBERSHIP'].contains(k),
         'dnd': false,
         'sound': true,
         'vibration': true,
@@ -548,7 +548,7 @@ class _SettingsSheetState extends State<_SettingsSheet> {
 
   void _profileMinimal() => _applyProfile({
         for (final k in _typeMap.keys)
-          k: ['booking', 'financial'].contains(k),
+          k: ['BOOKING', 'PAYMENT'].contains(k),
         'dnd': false,
         'sound': false,
         'vibration': false,

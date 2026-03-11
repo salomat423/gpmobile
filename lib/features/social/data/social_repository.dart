@@ -1,5 +1,4 @@
 import '../../../core/network/api_client.dart';
-import '../../../core/network/api_error.dart';
 
 class SocialRepository {
   SocialRepository(this._api);
@@ -94,14 +93,8 @@ class SocialRepository {
   }) async {
     final payload = <String, dynamic>{'payment_method': paymentMethod};
     if (useMembership != null) payload['use_membership'] = useMembership;
-    try {
-      final data = await _api.post('/lobby/$id/pay/', data: payload);
-      return Map<String, dynamic>.from(data as Map);
-    } on ApiError catch (e) {
-      if (e.statusCode != 404 && e.statusCode != 405) rethrow;
-      final data = await _api.post('/lobby/$id/pay-share/', data: payload);
-      return Map<String, dynamic>.from(data as Map);
-    }
+    final data = await _api.post('/lobby/$id/pay-share/', data: payload);
+    return Map<String, dynamic>.from(data as Map);
   }
 
   Future<Map<String, dynamic>> paymentStatus(int id) async {
@@ -120,7 +113,7 @@ class SocialRepository {
   }
 
   Future<Map<String, dynamic>> sendFriendRequest(int toUserId) async {
-    final data = await _api.post('/friends/send/', data: {'to_user_id': toUserId});
+    final data = await _api.post('/friends/add/', data: {'user_id': toUserId});
     return Map<String, dynamic>.from(data as Map);
   }
 
@@ -145,7 +138,7 @@ class SocialRepository {
   }
 
   Future<Map<String, dynamic>> removeFriend(int userId) async {
-    final data = await _api.post('/friends/remove/', data: {'user_id': userId});
+    final data = await _api.delete('/friends/$userId/remove/');
     return Map<String, dynamic>.from(data as Map);
   }
 
@@ -187,7 +180,7 @@ class SocialRepository {
 
   Future<List<Map<String, dynamic>>> notifications({bool? unread, String? type}) async {
     final qp = <String, dynamic>{};
-    if (unread != null) qp['unread'] = unread;
+    if (unread != null) qp['is_read'] = !unread;
     if (type != null && type.isNotEmpty) qp['type'] = type;
     final data = await _api.get('/notifications/', queryParameters: qp.isEmpty ? null : qp);
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();

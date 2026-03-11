@@ -18,7 +18,7 @@ class BookingRepository {
     required int courtId,
     required String dateIso,
   }) async {
-    final data = await _api.get('/bookings/check-availability/', queryParameters: {
+    final data = await _api.get('/bookings/available-slots/', queryParameters: {
       'court_id': courtId,
       'date': dateIso,
     });
@@ -47,7 +47,7 @@ class BookingRepository {
   }
 
   Future<List<Map<String, dynamic>>> myBookings() async {
-    final data = await _api.get('/bookings/');
+    final data = await _api.get('/bookings/my/');
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 

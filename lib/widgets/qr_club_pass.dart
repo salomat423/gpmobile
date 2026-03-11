@@ -23,12 +23,14 @@ class QrClubPass {
 
     String? qrData;
     bool hasError = false;
+    int validSeconds = 60;
 
     try {
       final result =
           await AppScope.instance.secondaryRepository.gymQr();
-      qrData = (result['qr_code'] ?? result['qr'] ?? result['data'] ?? '')
+      qrData = (result['qr_content'] ?? result['qr_code'] ?? result['qr'] ?? result['data'] ?? '')
           .toString();
+      validSeconds = (result['valid_seconds'] as num?)?.toInt() ?? 60;
     } catch (_) {
       hasError = true;
     }
@@ -43,6 +45,7 @@ class QrClubPass {
         userName: userName,
         initialQrData: qrData,
         hasError: hasError,
+        validSeconds: validSeconds,
       ),
     );
   }
@@ -66,11 +69,13 @@ class _QrDialog extends StatefulWidget {
     required this.userName,
     required this.initialQrData,
     required this.hasError,
+    this.validSeconds = 60,
   });
 
   final String userName;
   final String? initialQrData;
   final bool hasError;
+  final int validSeconds;
 
   @override
   State<_QrDialog> createState() => _QrDialogState();
@@ -91,6 +96,7 @@ class _QrDialogState extends State<_QrDialog>
     super.initState();
     _qrData = widget.initialQrData;
     _hasError = widget.hasError;
+    _secondsLeft = widget.validSeconds;
 
     _glowController = AnimationController(
       vsync: this,
@@ -105,7 +111,6 @@ class _QrDialogState extends State<_QrDialog>
   }
 
   void _startCountdown() {
-    _secondsLeft = 60;
     _countdownTimer?.cancel();
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (t) {
       if (!mounted) {
@@ -125,10 +130,12 @@ class _QrDialogState extends State<_QrDialog>
       final result =
           await AppScope.instance.secondaryRepository.gymQr();
       if (!mounted) return;
+      final validSec = (result['valid_seconds'] as num?)?.toInt();
       setState(() {
-        _qrData = (result['qr_code'] ?? result['qr'] ?? result['data'] ?? '')
+        _qrData = (result['qr_content'] ?? result['qr_code'] ?? result['qr'] ?? result['data'] ?? '')
             .toString();
         _hasError = false;
+        if (validSec != null && validSec > 0) _secondsLeft = validSec;
       });
     } catch (_) {
       if (!mounted) return;
