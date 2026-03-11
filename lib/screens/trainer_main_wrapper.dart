@@ -52,7 +52,7 @@ class _TrainerMainWrapperState extends State<TrainerMainWrapper> {
       body: IndexedStack(
         index: _currentIndex,
         children: [
-          const CoachScheduleScreen(),
+          CoachScheduleScreen(userName: _userName),
           const RatingScreen(),
           _TrainerQrTab(userName: _userName),
           const ProfileScreen(),

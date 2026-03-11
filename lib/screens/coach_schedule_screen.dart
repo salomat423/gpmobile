@@ -4,7 +4,12 @@ import '../core/di/app_scope.dart';
 import '../theme/app_theme.dart';
 
 class CoachScheduleScreen extends StatefulWidget {
-  const CoachScheduleScreen({super.key});
+  const CoachScheduleScreen({
+    super.key,
+    required this.userName,
+  });
+
+  final String userName;
 
   @override
   State<CoachScheduleScreen> createState() => _CoachScheduleScreenState();
@@ -50,74 +55,158 @@ class _CoachScheduleScreenState extends State<CoachScheduleScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    final hour = DateTime.now().hour;
+    final greeting = hour >= 5 && hour < 12
+        ? 'Доброе утро'
+        : hour >= 12 && hour < 18
+            ? 'Добрый день'
+            : hour >= 18 && hour < 23
+                ? 'Добрый вечер'
+                : 'Доброй ночи';
+    final name = widget.userName.isNotEmpty ? widget.userName : 'тренер';
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Моё расписание'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.date_range_rounded),
-            tooltip: 'Выбрать период',
-            onPressed: _pickRange,
-          ),
-        ],
-      ),
-      body: FutureBuilder<List<Map<String, dynamic>>>(
-        future: _future,
-        builder: (context, snap) {
-          if (snap.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (snap.hasError) {
-            return Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Text(snap.error.toString(), textAlign: TextAlign.center),
-                const SizedBox(height: 12),
-                ElevatedButton(onPressed: _reload, child: const Text('Повторить')),
-              ]),
-            );
-          }
-          final items = snap.data ?? [];
-          if (items.isEmpty) {
-            return Center(
-              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.event_busy_rounded, size: 64, color: Colors.grey.withValues(alpha: 0.3)),
-                const SizedBox(height: 16),
-                const Text('Нет занятий в этом периоде', style: TextStyle(color: Colors.grey, fontSize: 16)),
-                const SizedBox(height: 8),
-                Text(
-                  '${_formatDate(_range.start)} – ${_formatDate(_range.end)}',
-                  style: const TextStyle(color: Colors.grey, fontSize: 13),
-                ),
-              ]),
-            );
-          }
-
-          final grouped = _groupByDate(items);
-          final dates = grouped.keys.toList()..sort();
-
-          return RefreshIndicator(
-            onRefresh: () async => _reload(),
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: dates.length,
-              itemBuilder: (context, i) {
-                final date = dates[i];
-                final bookings = grouped[date]!;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (i > 0) const SizedBox(height: 20),
-                    _dateHeader(date, isDark),
-                    const SizedBox(height: 8),
-                    ...bookings.map((b) => _bookingTile(b, isDark)),
-                  ],
-                );
-              },
+      body: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '$greeting,',
+                    style: const TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.grey,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '$name!',
+                    style: const TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Ниже — ваше расписание и занятия.',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: isDark ? Colors.white60 : Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: theme.cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.03),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.calendar_today_rounded, size: 16, color: AppTheme.primaryColor),
+                              const SizedBox(width: 8),
+                              Flexible(
+                                child: Text(
+                                  '${_formatDate(_range.start)} – ${_formatDate(_range.end)}',
+                                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        tooltip: 'Выбрать период',
+                        onPressed: _pickRange,
+                        icon: const Icon(Icons.date_range_rounded),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
-          );
-        },
+            const SizedBox(height: 8),
+            Expanded(
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: _future,
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  if (snap.hasError) {
+                    return Center(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Text(snap.error.toString(), textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        ElevatedButton(onPressed: _reload, child: const Text('Повторить')),
+                      ]),
+                    );
+                  }
+                  final items = snap.data ?? [];
+                  if (items.isEmpty) {
+                    return Center(
+                      child: Column(mainAxisSize: MainAxisSize.min, children: [
+                        Icon(Icons.event_busy_rounded, size: 64, color: Colors.grey.withValues(alpha: 0.3)),
+                        const SizedBox(height: 16),
+                        const Text('Нет занятий в этом периоде', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${_formatDate(_range.start)} – ${_formatDate(_range.end)}',
+                          style: const TextStyle(color: Colors.grey, fontSize: 13),
+                        ),
+                      ]),
+                    );
+                  }
+
+                  final grouped = _groupByDate(items);
+                  final dates = grouped.keys.toList()..sort();
+
+                  return RefreshIndicator(
+                    onRefresh: () async => _reload(),
+                    child: ListView.builder(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      itemCount: dates.length,
+                      itemBuilder: (context, i) {
+                        final date = dates[i];
+                        final bookings = grouped[date]!;
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (i > 0) const SizedBox(height: 20),
+                            _dateHeader(date, isDark),
+                            const SizedBox(height: 8),
+                            ...bookings.map((b) => _bookingTile(b, isDark)),
+                          ],
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
