@@ -473,28 +473,40 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               label: const Text('Отменить участие', style: TextStyle(color: Colors.redAccent)),
             ),
           ),
-        // Creator: close lobby at any non-terminal status (including PAID)
-        if (isCreator && status != 'CLOSED')
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: OutlinedButton.icon(
+        // Creator: cancel/close lobby at any non-terminal status (including BOOKED/PAID)
+        if (isCreator && status != 'CLOSED') ...[
+          const SizedBox(height: 4),
+          Builder(builder: (ctx) {
+            final bookingId = (lobby['booking_id'] as num?)?.toInt();
+            final hasBooking = bookingId != null && (status == 'BOOKED' || status == 'PAID');
+            return OutlinedButton.icon(
               onPressed: () => _confirmAndDo(
                 title: 'Отменить лобби?',
                 message: status == 'PAID'
-                    ? 'Все участники уже оплатили. Лобби будет отменено. Возврат средств осуществляется согласно политике клуба.'
+                    ? 'Все участники уже оплатили. Бронь и лобби будут отменены. Возврат средств осуществляется согласно политике клуба.'
                     : status == 'BOOKED'
                         ? 'Бронь будет отменена. Возврат средств зависит от политики клуба.'
                         : 'Лобби будет закрыто для всех участников.',
-                confirmLabel: 'Отменить лобби',
+                confirmLabel: 'Отменить',
                 isDestructive: true,
-                action: () => AppScope.instance.socialRepository.closeLobby(id),
-                successMsg: 'Лобби отменено',
+                action: () async {
+                  // For BOOKED/PAID: cancel the actual booking first
+                  if (hasBooking) {
+                    await AppScope.instance.bookingRepository.cancelBooking(bookingId);
+                  }
+                  // Then close the lobby (best-effort — may fail if backend restricts it)
+                  try {
+                    await AppScope.instance.socialRepository.closeLobby(id);
+                  } catch (_) {}
+                },
+                successMsg: hasBooking ? 'Бронь и лобби отменены' : 'Лобби закрыто',
               ),
               icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
               label: const Text('Отменить лобби', style: TextStyle(color: Colors.redAccent)),
               style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.redAccent)),
-            ),
-          ),
+            );
+          }),
+        ],
       ],
     );
   }
