@@ -455,18 +455,10 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                 ]),
               ),
               const SizedBox(height: 8),
-              // Cancel after payment — warn about possible non-refund
               OutlinedButton.icon(
-                onPressed: () => _confirmAndDo(
-                  title: 'Отменить участие?',
-                  message: 'Вы уже оплатили свою долю. Возврат средств зависит от политики клуба. Вы уверены, что хотите отменить участие?',
-                  confirmLabel: 'Отменить участие',
-                  isDestructive: true,
-                  action: () => AppScope.instance.socialRepository.leaveLobby(id),
-                  successMsg: 'Вы отменили участие',
-                ),
+                onPressed: () => _showCancelRequestSheet(isPaid: true),
                 icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
-                label: const Text('Отменить участие', style: TextStyle(color: Colors.redAccent)),
+                label: const Text('Запросить отмену', style: TextStyle(color: Colors.redAccent)),
                 style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.redAccent)),
               ),
             ],
@@ -476,14 +468,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: OutlinedButton.icon(
-              onPressed: () => _confirmAndDo(
-                title: 'Отменить участие?',
-                message: 'Вы уверены, что хотите отменить участие в этом лобби?',
-                confirmLabel: 'Отменить',
-                isDestructive: true,
-                action: () => AppScope.instance.socialRepository.leaveLobby(id),
-                successMsg: 'Вы отменили участие',
-              ),
+              onPressed: () => _showCancelRequestSheet(isPaid: false),
               icon: const Icon(Icons.logout, color: Colors.redAccent),
               label: const Text('Отменить участие', style: TextStyle(color: Colors.redAccent)),
             ),
@@ -1069,6 +1054,129 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
   }
 
   // ─── Dialogs ───
+
+  void _showCancelRequestSheet({required bool isPaid}) async {
+    final reasonCtrl = TextEditingController();
+    bool agreed = false;
+    bool loading = false;
+
+    final confirmed = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(child: Container(
+                  width: 40, height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+                )),
+                Row(children: [
+                  const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 24),
+                  const SizedBox(width: 10),
+                  Text(
+                    isPaid ? 'Запрос на отмену участия' : 'Отмена участия',
+                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                ]),
+                const SizedBox(height: 12),
+                if (isPaid) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+                    ),
+                    child: const Text(
+                      'Вы уже оплатили свою долю. После отмены организатор будет уведомлён. '
+                      'Вопрос возврата средств решается организатором согласно политике клуба.',
+                      style: TextStyle(fontSize: 13, color: Colors.redAccent),
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                const Text('Причина (необязательно)', style: TextStyle(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: reasonCtrl,
+                  maxLines: 3,
+                  decoration: InputDecoration(
+                    hintText: 'Укажите причину отмены...',
+                    filled: true,
+                    fillColor: Colors.grey.withValues(alpha: 0.1),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (isPaid)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: agreed,
+                    onChanged: (v) => setSheet(() => agreed = v ?? false),
+                    title: const Text(
+                      'Я понимаю, что возврат средств решается организатором',
+                      style: TextStyle(fontSize: 13),
+                    ),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    activeColor: Colors.redAccent,
+                  ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.redAccent,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: (isPaid && !agreed) || loading
+                        ? null
+                        : () {
+                            setSheet(() => loading = true);
+                            Navigator.pop(ctx, true);
+                          },
+                    child: loading
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text(isPaid ? 'Отправить запрос на отмену' : 'Отменить участие'),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: TextButton(
+                    onPressed: () => Navigator.pop(ctx, false),
+                    child: const Text('Назад'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    if (confirmed == true) {
+      _doAction(
+        () => AppScope.instance.socialRepository.leaveLobby(widget.lobbyId),
+        isPaid
+            ? 'Запрос отправлен. Организатор получит уведомление.'
+            : 'Вы отменили участие',
+      );
+    }
+  }
 
   void _showProposeDialog() async {
     DateTime selectedDate = DateTime.now();
