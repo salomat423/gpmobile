@@ -328,25 +328,96 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ── Reviews placeholder ──────────────────────────────────────────────
 
   void _showReviewsSheet() {
+    final textCtrl = TextEditingController();
+    int rating = 5;
+
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => _SheetWrapper(
-        title: 'Отзывы',
-        icon: Icons.rate_review_outlined,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.rate_review_outlined, size: 56, color: Colors.grey),
-              SizedBox(height: 16),
-              Text(
-                'Система отзывов будет доступна\nв ближайшем обновлении',
-                textAlign: TextAlign.center,
-                style: TextStyle(color: Colors.grey, fontSize: 15),
-              ),
-            ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Theme.of(ctx).scaffoldBackgroundColor,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+            ),
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 16),
+                Row(children: const [
+                  Icon(Icons.rate_review_outlined),
+                  SizedBox(width: 8),
+                  Text('Оставить отзыв', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ]),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accentColor.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Row(children: const [
+                    Icon(Icons.visibility_off_outlined, size: 18, color: AppTheme.primaryColor),
+                    SizedBox(width: 8),
+                    Expanded(child: Text('Ваш отзыв полностью анонимный', style: TextStyle(fontSize: 13, color: AppTheme.primaryColor))),
+                  ]),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: List.generate(5, (i) {
+                    final star = i + 1;
+                    return GestureDetector(
+                      onTap: () => setSheetState(() => rating = star),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
+                        child: Icon(
+                          star <= rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                          size: 40,
+                          color: star <= rating ? Colors.amber : Colors.grey[400],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: textCtrl,
+                  maxLines: 4,
+                  maxLength: 500,
+                  decoration: InputDecoration(
+                    hintText: 'Расскажите о вашем опыте...',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: ElevatedButton.icon(
+                    onPressed: () {
+                      final text = textCtrl.text.trim();
+                      if (text.isEmpty) {
+                        ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Напишите отзыв')));
+                        return;
+                      }
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Спасибо за ваш анонимный отзыв!')),
+                      );
+                    },
+                    icon: const Icon(Icons.send_rounded),
+                    label: const Text('Отправить анонимно', style: TextStyle(fontWeight: FontWeight.w600)),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -699,65 +770,177 @@ class _ProfileScreenState extends State<ProfileScreen> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.8),
-        decoration: BoxDecoration(
-          color: Theme.of(ctx).scaffoldBackgroundColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        child: Column(
-          children: [
-            _buildDragHandle(),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  Icon(Icons.fitness_center),
-                  SizedBox(width: 8),
-                  Text('История посещений зала', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                ],
+      builder: (ctx) {
+        final isDark = Theme.of(ctx).brightness == Brightness.dark;
+        return Container(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.85),
+          decoration: BoxDecoration(
+            color: Theme.of(ctx).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              _buildDragHandle(),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.primaryColor.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.fitness_center_rounded, color: AppTheme.primaryColor),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text('История посещений зала', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                ]),
               ),
-            ),
-            const SizedBox(height: 12),
-            Expanded(
-              child: FutureBuilder<List<Map<String, dynamic>>>(
-                future: AppScope.instance.secondaryRepository.gymVisits(),
-                builder: (ctx, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snap.hasError) {
-                    return Center(child: Text(snap.error.toString(), textAlign: TextAlign.center));
-                  }
-                  final visits = snap.data ?? const [];
-                  if (visits.isEmpty) {
-                    return const Center(child: Text('Посещений пока нет', style: TextStyle(color: Colors.grey)));
-                  }
-                  return ListView.separated(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    itemCount: visits.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1),
-                    itemBuilder: (_, i) {
-                      final v = visits[i];
-                      final date = (v['created_at'] ?? v['date'] ?? '').toString();
-                      final status = (v['status'] ?? v['type'] ?? 'VISIT').toString();
-                      final note = (v['message'] ?? v['description'] ?? '').toString();
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: const Icon(Icons.check_circle_outline, color: Colors.green),
-                        title: Text(date.isEmpty ? 'Посещение #${i + 1}' : date),
-                        subtitle: note.isEmpty ? null : Text(note, maxLines: 2, overflow: TextOverflow.ellipsis),
-                        trailing: Text(status, style: const TextStyle(fontSize: 11, color: Colors.grey)),
+              const SizedBox(height: 16),
+              Expanded(
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: AppScope.instance.secondaryRepository.gymVisits(),
+                  builder: (ctx, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snap.hasError) {
+                      return Center(child: Text(snap.error.toString(), textAlign: TextAlign.center));
+                    }
+                    final visits = snap.data ?? const [];
+                    if (visits.isEmpty) {
+                      return Center(
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(Icons.fitness_center_rounded, size: 64, color: Colors.grey.withValues(alpha: 0.25)),
+                          const SizedBox(height: 16),
+                          const Text('Посещений пока нет', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                          const SizedBox(height: 4),
+                          const Text('Ваши визиты появятся здесь', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                        ]),
                       );
-                    },
-                  );
-                },
+                    }
+
+                    return Column(children: [
+                      Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 20),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            colors: [AppTheme.primaryColor, AppTheme.primaryColor.withValues(alpha: 0.7)],
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
+                          _gymStatItem('${visits.length}', 'Всего визитов', Icons.directions_walk_rounded),
+                          _gymStatItem(_gymThisMonth(visits).toString(), 'В этом месяце', Icons.calendar_today_rounded),
+                          _gymStatItem(_gymStreak(visits).toString(), 'Серия дней', Icons.local_fire_department_rounded),
+                        ]),
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: ListView.builder(
+                          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                          itemCount: visits.length,
+                          itemBuilder: (_, i) {
+                            final v = visits[i];
+                            final dateRaw = (v['created_at'] ?? v['date'] ?? '').toString();
+                            final dt = DateTime.tryParse(dateRaw)?.toLocal();
+                            final dateStr = dt != null
+                                ? '${dt.day.toString().padLeft(2, '0')}.${dt.month.toString().padLeft(2, '0')}.${dt.year}'
+                                : dateRaw;
+                            final timeStr = dt != null
+                                ? '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}'
+                                : '';
+                            final status = (v['status'] ?? v['type'] ?? 'VISIT').toString().toUpperCase();
+                            final note = (v['message'] ?? v['description'] ?? '').toString();
+                            final isSubscription = status.contains('SUBSCRIPTION') || status.contains('ACCESS_GRANTED');
+
+                            return Container(
+                              margin: const EdgeInsets.only(bottom: 10),
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: Theme.of(ctx).cardColor,
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 6, offset: const Offset(0, 2))],
+                              ),
+                              child: Row(children: [
+                                Container(
+                                  width: 44, height: 44,
+                                  decoration: BoxDecoration(
+                                    color: (isSubscription ? Colors.green : Colors.blue).withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Icon(
+                                    isSubscription ? Icons.card_membership_rounded : Icons.payment_rounded,
+                                    color: isSubscription ? Colors.green : Colors.blue,
+                                    size: 22,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                                    Text(dateStr, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15)),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      note.isNotEmpty ? note : (isSubscription ? 'По абонементу' : 'Разовый визит'),
+                                      style: TextStyle(fontSize: 13, color: isDark ? Colors.white60 : Colors.grey[600]),
+                                      maxLines: 1, overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ]),
+                                ),
+                                if (timeStr.isNotEmpty)
+                                  Text(timeStr, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: isDark ? Colors.white54 : Colors.grey)),
+                              ]),
+                            );
+                          },
+                        ),
+                      ),
+                    ]);
+                  },
+                ),
               ),
-            ),
-          ],
-        ),
-      ),
+            ],
+          ),
+        );
+      },
     );
+  }
+
+  static Widget _gymStatItem(String value, String label, IconData icon) {
+    return Column(children: [
+      Icon(icon, color: Colors.white70, size: 20),
+      const SizedBox(height: 4),
+      Text(value, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 20)),
+      Text(label, style: const TextStyle(color: Colors.white70, fontSize: 11)),
+    ]);
+  }
+
+  static int _gymThisMonth(List<Map<String, dynamic>> visits) {
+    final now = DateTime.now();
+    return visits.where((v) {
+      final dt = DateTime.tryParse((v['created_at'] ?? v['date'] ?? '').toString());
+      return dt != null && dt.month == now.month && dt.year == now.year;
+    }).length;
+  }
+
+  static int _gymStreak(List<Map<String, dynamic>> visits) {
+    final days = visits
+        .map((v) => DateTime.tryParse((v['created_at'] ?? v['date'] ?? '').toString())?.toLocal())
+        .whereType<DateTime>()
+        .map((d) => DateTime(d.year, d.month, d.day))
+        .toSet()
+        .toList()
+      ..sort((a, b) => b.compareTo(a));
+    if (days.isEmpty) return 0;
+    int streak = 1;
+    for (int i = 1; i < days.length; i++) {
+      if (days[i - 1].difference(days[i]).inDays == 1) {
+        streak++;
+      } else {
+        break;
+      }
+    }
+    return streak;
   }
 
   // ── Logout (existing) ────────────────────────────────────────────────
@@ -1029,9 +1212,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   subtitle: Text(phone),
                   trailing: IconButton(
-                    icon: const Icon(Icons.edit_outlined, color: AppTheme.primaryColor),
-                    tooltip: 'Редактировать',
-                    onPressed: () => _showEditProfileSheet(me),
+                    icon: const Icon(Icons.camera_alt_outlined, color: AppTheme.primaryColor),
+                    tooltip: 'Сменить фото',
+                    onPressed: _onAvatarTap,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1191,13 +1374,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   onTap: _showTermsDialog,
                 ),
 
-                // ── Security & account section ──
+                // ── Account section ──
                 _sectionLabel('Аккаунт'),
-                _buildMenuTile(
-                  icon: Icons.shield_outlined,
-                  title: 'Безопасность',
-                  onTap: _showSecuritySheet,
-                ),
                 const SizedBox(height: 8),
                 OutlinedButton.icon(
                   onPressed: _confirmLogout,
@@ -1207,12 +1385,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     padding: const EdgeInsets.symmetric(vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
-                ),
-                const SizedBox(height: 8),
-                TextButton.icon(
-                  onPressed: _confirmDeleteAccount,
-                  icon: const Icon(Icons.delete_forever, color: Colors.redAccent, size: 18),
-                  label: const Text('Удалить аккаунт', style: TextStyle(color: Colors.redAccent, fontSize: 13)),
                 ),
                 const SizedBox(height: 24),
               ],

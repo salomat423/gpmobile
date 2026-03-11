@@ -145,6 +145,20 @@ class _SocialScreenState extends State<SocialScreen>
   // ─── Lobby actions ───
 
   Future<void> _joinLobby(int id) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text('Вступить в лобби?'),
+        content: const Text('Вы хотите присоединиться к этому лобби?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Вступить')),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
     final messenger = ScaffoldMessenger.of(context);
     try {
       await AppScope.instance.socialRepository.joinLobby(id);

@@ -56,6 +56,37 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
     }
   }
 
+  Future<void> _confirmAndDo({
+    required String title,
+    required String message,
+    required String confirmLabel,
+    required Future<dynamic> Function() action,
+    String? successMsg,
+    bool isDestructive = false,
+  }) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isDestructive ? Colors.redAccent : null,
+              foregroundColor: isDestructive ? Colors.white : null,
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(confirmLabel),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    _doAction(action, successMsg);
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -321,7 +352,13 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
       children: [
         if ((status == 'OPEN' || status == 'WAITING') && !isFull)
           ElevatedButton.icon(
-            onPressed: () => _doAction(() => AppScope.instance.socialRepository.joinLobby(id), 'Вы вступили в лобби'),
+            onPressed: () => _confirmAndDo(
+              title: 'Вступить в лобби?',
+              message: 'Вы хотите присоединиться к этому лобби?',
+              confirmLabel: 'Вступить',
+              action: () => AppScope.instance.socialRepository.joinLobby(id),
+              successMsg: 'Вы вступили в лобби',
+            ),
             icon: const Icon(Icons.login),
             label: const Text('Вступить'),
           ),
@@ -329,7 +366,14 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: OutlinedButton.icon(
-              onPressed: () => _doAction(() => AppScope.instance.socialRepository.leaveLobby(id), 'Вы вышли из лобби'),
+              onPressed: () => _confirmAndDo(
+                title: 'Покинуть лобби?',
+                message: 'Вы уверены, что хотите выйти из лобби?',
+                confirmLabel: 'Покинуть',
+                isDestructive: true,
+                action: () => AppScope.instance.socialRepository.leaveLobby(id),
+                successMsg: 'Вы вышли из лобби',
+              ),
               icon: const Icon(Icons.logout, color: Colors.redAccent),
               label: const Text('Покинуть', style: TextStyle(color: Colors.redAccent)),
             ),
