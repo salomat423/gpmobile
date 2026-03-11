@@ -702,11 +702,16 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
       final breakdown = (preview['breakdown'] as Map?)?.cast<String, dynamic>() ?? {};
       final bCoach = _parseDouble(breakdown['coach'] ?? preview['coach_price']);
       final bServices = _parseDouble(breakdown['services'] ?? preview['services_price'] ?? preview['service_total']);
+      final bPrimeTime = _parseDouble(breakdown['prime_time_surcharge']);
       final total = _parseDouble(preview['total']);
       final membershipApplied = preview['membership_applied'] == true;
+      final coachCoveredByMembership = preview['coach_covered_by_membership'] == true;
+      final hoursRemainingAfter = preview['hours_remaining_after'];
+      final primeTimeInfo = (preview['prime_time_info'] as Map?)?.cast<String, dynamic>();
 
       final actualCourtCost = membershipApplied ? 0.0 : courtCost;
-      final subtotalBeforeDiscount = actualCourtCost + bCoach + bServices;
+      final actualCoachCost = coachCoveredByMembership ? 0.0 : bCoach;
+      final subtotalBeforeDiscount = actualCourtCost + actualCoachCost + bServices + bPrimeTime;
 
       double discountAmount = 0;
       if (promoApplied && promoDiscountValue > 0) {
@@ -742,11 +747,53 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                   Text('Услуги: ${serviceLabels.join(', ')}', style: const TextStyle(color: Colors.grey, fontSize: 13)),
                 ],
                 if (membershipApplied) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-                    child: Text('Абонемент: ${preview['membership_name'] ?? 'Активен'}', style: const TextStyle(color: AppTheme.primaryColor, fontSize: 12, fontWeight: FontWeight.w600)),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: AppTheme.primaryColor.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10)),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(children: [
+                          const Icon(Icons.card_membership_rounded, size: 15, color: AppTheme.primaryColor),
+                          const SizedBox(width: 6),
+                          Text('Корт по абонементу: ${preview['membership_name'] ?? ''}', style: const TextStyle(color: AppTheme.primaryColor, fontSize: 12, fontWeight: FontWeight.w600)),
+                        ]),
+                        if (coachCoveredByMembership) ...[
+                          const SizedBox(height: 4),
+                          const Row(children: [
+                            Icon(Icons.sports_rounded, size: 15, color: Colors.teal),
+                            SizedBox(width: 6),
+                            Text('Тренер по абонементу ✓', style: TextStyle(color: Colors.teal, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ]),
+                        ],
+                        if (hoursRemainingAfter != null) ...[
+                          const SizedBox(height: 4),
+                          Row(children: [
+                            const Icon(Icons.schedule_rounded, size: 15, color: Colors.grey),
+                            const SizedBox(width: 6),
+                            Text('После брони останется: ${_parseDouble(hoursRemainingAfter).toStringAsFixed(1)} ч', style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                          ]),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+                if (primeTimeInfo != null) ...[
+                  const SizedBox(height: 8),
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.orange.withValues(alpha: 0.3))),
+                    child: Row(children: [
+                      const Icon(Icons.bolt_rounded, color: Colors.orange, size: 16),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Вне приоритетного окна (${primeTimeInfo['priority_window'] ?? ''}). Доплата: ${_parseDouble(primeTimeInfo['surcharge_total']).toStringAsFixed(0)}₸',
+                          style: const TextStyle(color: Colors.orange, fontSize: 12),
+                        ),
+                      ),
+                    ]),
                   ),
                 ],
                 const SizedBox(height: 14),
@@ -756,8 +803,12 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                   _priceRow('Аренда корта', '0 (абонемент)')
                 else
                   _priceRow('Аренда корта', courtCost.toStringAsFixed(0)),
-                if (coachId != null && bCoach > 0)
-                  _priceRow('Тренер', bCoach.toStringAsFixed(0)),
+                if (coachId != null)
+                  coachCoveredByMembership
+                      ? _priceRow('Тренер', '0 (абонемент)')
+                      : (bCoach > 0 ? _priceRow('Тренер', bCoach.toStringAsFixed(0)) : const SizedBox.shrink()),
+                if (bPrimeTime > 0)
+                  _priceRow('Доплата прайм-тайм', bPrimeTime.toStringAsFixed(0)),
                 if (services.isNotEmpty && bServices > 0)
                   _priceRow('Доп. услуги', bServices.toStringAsFixed(0)),
                 if (promoApplied && promoDiscountValue > 0 && discountAmount > 0) ...[
@@ -775,7 +826,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                 ],
                 const Divider(),
                 const SizedBox(height: 4),
-                _priceRow('ИТОГО', (total - discountAmount).toStringAsFixed(0), isBold: true),
+                _priceRow('ИТОГО', (total > 0 ? total : (subtotalBeforeDiscount - discountAmount).clamp(0, double.infinity)).toStringAsFixed(0), isBold: true),
               ],
             ),
           ),
@@ -1475,61 +1526,453 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
         }
         if (snapshot.hasError) return _errorWidget(snapshot.error, () => setState(_reloadAll));
         final items = snapshot.data ?? const [];
-        if (items.isEmpty) {
-          return Center(
-            child: ElevatedButton(
-              onPressed: () async {
-                final types = await AppScope.instance.membershipRepository.types();
-                if (types.isEmpty || !mounted) return;
-                final firstType = (types.first['id'] as num?)?.toInt();
-                if (firstType == null) return;
-                await AppScope.instance.membershipRepository.buy(firstType);
-                if (!mounted) return;
-                setState(_reloadAll);
-              },
-              child: const Text('Купить первый доступный абонемент'),
-            ),
-          );
-        }
         return RefreshIndicator(
           onRefresh: () async => setState(_reloadAll),
-          child: ListView.builder(
+          child: ListView(
             padding: const EdgeInsets.all(16),
-            itemCount: items.length,
-            itemBuilder: (context, i) {
-              final m = items[i];
-              final frozen = m['is_frozen'] == true;
-              return Container(
-                margin: const EdgeInsets.only(bottom: 12),
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).cardColor,
-                  borderRadius: BorderRadius.circular(16),
+            children: [
+              if (items.isEmpty)
+                _emptyMembershipsCard(context)
+              else
+                ...items.map((m) => _membershipCard(context, m)),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: () => _showMembershipCatalog(context),
+                icon: const Icon(Icons.add_card_rounded),
+                label: const Text('Купить абонемент'),
+                style: OutlinedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text((m['membership_type_name'] ?? m['type_name'] ?? 'Абонемент').toString(), style: const TextStyle(fontWeight: FontWeight.bold)),
-                          const SizedBox(height: 4),
-                          Text('До: ${m['end_date'] ?? '-'}  •  Часы: ${m['hours_remaining'] ?? '-'}', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-                        ],
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: () => _freezeOrUnfreeze(m),
-                      child: Text(frozen ? 'Разморозить' : 'Заморозить'),
-                    ),
-                  ],
-                ),
-              );
-            },
+              ),
+            ],
           ),
         );
       },
     );
+  }
+
+  Widget _emptyMembershipsCard(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Column(
+        children: [
+          Icon(Icons.card_membership_rounded, size: 48, color: Colors.grey[400]),
+          const SizedBox(height: 12),
+          const Text('У вас нет активных абонементов', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          const SizedBox(height: 6),
+          Text('Оформите абонемент и получите часы, скидки и приоритетное время', textAlign: TextAlign.center, style: TextStyle(color: Colors.grey[500], fontSize: 13)),
+        ],
+      ),
+    );
+  }
+
+  Widget _membershipCard(BuildContext context, Map<String, dynamic> m) {
+    final frozen = m['is_frozen'] == true;
+    final isActive = m['is_active'] == true && !frozen;
+    final serviceType = (m['service_type'] ?? '').toString();
+    final serviceTypeDisplay = (m['service_type_display'] ?? serviceType).toString();
+    final name = (m['membership_type_name'] ?? m['type_name'] ?? 'Абонемент').toString();
+    final endDateRaw = (m['end_date'] ?? '').toString();
+    final hoursRemaining = m['hours_remaining'];
+    final visitsRemaining = (m['visits_remaining'] as num?)?.toInt();
+    final priorityStart = (m['priority_time_start'] ?? '').toString();
+    final priorityEnd = (m['priority_time_end'] ?? '').toString();
+    final surcharge = _parseDouble(m['prime_time_surcharge']);
+    final includesCoach = m['includes_coach'] == true;
+    final minP = (m['min_participants'] as num?)?.toInt() ?? 1;
+    final maxP = (m['max_participants'] as num?)?.toInt() ?? 1;
+
+    final hasPriority = priorityStart.isNotEmpty && priorityEnd.isNotEmpty;
+    final hasHours = (serviceType == 'PADEL_HOURS' || serviceType == 'TRAINING_HOURS') && hoursRemaining != null;
+
+    final cardColor = _membershipCardColor(serviceType);
+    final cardIcon = _membershipIcon(serviceType);
+
+    // Parse hours for progress bar
+    double hoursUsed = 0;
+    double hoursTotal = 0;
+    if (hasHours) {
+      final totalHoursRaw = m['total_hours'] ?? m['membership_type_total_hours'];
+      hoursTotal = _parseDouble(totalHoursRaw);
+      hoursUsed = hoursTotal - _parseDouble(hoursRemaining);
+    }
+
+    final endDateFmt = _formatIsoDate(endDateRaw);
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: frozen
+              ? Colors.grey.withValues(alpha: 0.3)
+              : isActive
+                  ? cardColor.withValues(alpha: 0.4)
+                  : Colors.grey.withValues(alpha: 0.2),
+          width: 1.5,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header gradient
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: frozen
+                    ? [Colors.grey[700]!, Colors.grey[600]!]
+                    : [cardColor.withValues(alpha: 0.9), cardColor.withValues(alpha: 0.65)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: Row(
+              children: [
+                Icon(cardIcon, color: Colors.white, size: 26),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                      Text(serviceTypeDisplay, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12)),
+                    ],
+                  ),
+                ),
+                // Status badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.25),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text(
+                    frozen ? 'Заморожен' : isActive ? 'Активен' : 'Неактивен',
+                    style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Hours progress bar
+                if (hasHours) ...[
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    const Text('Часы', style: TextStyle(color: Colors.grey, fontSize: 13)),
+                    Text(
+                      '${_parseDouble(hoursRemaining).toStringAsFixed(1)} из ${hoursTotal.toStringAsFixed(0)} ч',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: cardColor, fontSize: 14),
+                    ),
+                  ]),
+                  const SizedBox(height: 6),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(4),
+                    child: LinearProgressIndicator(
+                      value: hoursTotal > 0 ? (_parseDouble(hoursRemaining) / hoursTotal).clamp(0, 1) : 0,
+                      minHeight: 8,
+                      backgroundColor: Colors.grey.withValues(alpha: 0.15),
+                      valueColor: AlwaysStoppedAnimation<Color>(cardColor),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                // Visits
+                if (visitsRemaining != null && visitsRemaining > 0) ...[
+                  Row(children: [
+                    const Icon(Icons.confirmation_num_outlined, size: 15, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Text('Посещений осталось: $visitsRemaining', style: const TextStyle(fontSize: 13)),
+                  ]),
+                  const SizedBox(height: 6),
+                ],
+                // Expiry
+                Row(children: [
+                  const Icon(Icons.calendar_today_rounded, size: 15, color: Colors.grey),
+                  const SizedBox(width: 6),
+                  Text('Действует до: $endDateFmt', style: const TextStyle(fontSize: 13)),
+                ]),
+                // Priority window
+                if (hasPriority) ...[
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    const Icon(Icons.access_time_rounded, size: 15, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Приоритетное время: ${priorityStart.substring(0, 5)}–${priorityEnd.substring(0, 5)}',
+                      style: const TextStyle(fontSize: 13),
+                    ),
+                  ]),
+                ],
+                // Prime-time surcharge
+                if (surcharge > 0) ...[
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    const Icon(Icons.bolt_rounded, size: 15, color: Colors.orange),
+                    const SizedBox(width: 6),
+                    Text('Прайм-тайм: +${surcharge.toStringAsFixed(0)}₸/час', style: const TextStyle(fontSize: 13, color: Colors.orange)),
+                  ]),
+                ],
+                // Participants
+                if (maxP > 1) ...[
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    const Icon(Icons.people_outline_rounded, size: 15, color: Colors.grey),
+                    const SizedBox(width: 6),
+                    Text('Участников: $minP–$maxP чел.', style: const TextStyle(fontSize: 13)),
+                  ]),
+                ],
+                // Badges row
+                const SizedBox(height: 10),
+                Wrap(spacing: 6, runSpacing: 6, children: [
+                  if (includesCoach)
+                    _mBadge(Icons.sports_rounded, 'Тренер включён', Colors.teal),
+                  if (hasPriority && surcharge == 0)
+                    _mBadge(Icons.check_circle_rounded, 'Без доплаты', Colors.green),
+                ]),
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    onPressed: () => _freezeOrUnfreeze(m),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: frozen ? AppTheme.primaryColor : Colors.blueGrey,
+                      side: BorderSide(color: frozen ? AppTheme.primaryColor : Colors.blueGrey.withValues(alpha: 0.4)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
+                    child: Text(frozen ? 'Разморозить' : 'Заморозить'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _mBadge(IconData icon, String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 4),
+        Text(label, style: TextStyle(fontSize: 11, color: color, fontWeight: FontWeight.w600)),
+      ]),
+    );
+  }
+
+  Color _membershipCardColor(String serviceType) {
+    switch (serviceType) {
+      case 'PADEL_HOURS': return AppTheme.primaryColor;
+      case 'TRAINING_HOURS': return Colors.teal;
+      case 'GYM': return Colors.orange;
+      case 'VIP': return const Color(0xFF6A1B9A);
+      default: return Colors.blueGrey;
+    }
+  }
+
+  IconData _membershipIcon(String serviceType) {
+    switch (serviceType) {
+      case 'PADEL_HOURS': return Icons.sports_tennis_rounded;
+      case 'TRAINING_HOURS': return Icons.sports_rounded;
+      case 'GYM': return Icons.fitness_center_rounded;
+      case 'VIP': return Icons.diamond_rounded;
+      default: return Icons.card_membership_rounded;
+    }
+  }
+
+  String _formatIsoDate(String raw) {
+    final dt = DateTime.tryParse(raw)?.toLocal();
+    if (dt == null) return raw;
+    const months = ['янв', 'фев', 'мар', 'апр', 'май', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+  }
+
+  Future<void> _showMembershipCatalog(BuildContext context) async {
+    List<Map<String, dynamic>> types;
+    try {
+      types = await AppScope.instance.membershipRepository.types();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+      return;
+    }
+    if (!mounted) return;
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        maxChildSize: 0.95,
+        minChildSize: 0.5,
+        builder: (ctx, scrollCtrl) => Container(
+          decoration: BoxDecoration(
+            color: Theme.of(ctx).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                child: Column(children: [
+                  Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+                  const SizedBox(height: 14),
+                  const Text('Каталог абонементов', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 4),
+                ]),
+              ),
+              Expanded(
+                child: ListView.builder(
+                  controller: scrollCtrl,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: types.length,
+                  itemBuilder: (_, i) {
+                    final t = types[i];
+                    final typeId = (t['id'] as num?)?.toInt();
+                    final serviceType = (t['service_type'] ?? '').toString();
+                    final serviceTypeDisplay = (t['service_type_display'] ?? serviceType).toString();
+                    final tName = (t['name'] ?? 'Абонемент').toString();
+                    final desc = (t['description'] ?? '').toString();
+                    final price = (t['price'] ?? '').toString();
+                    final daysValid = (t['days_valid'] as num?)?.toInt() ?? 0;
+                    final totalHours = _parseDouble(t['total_hours']);
+                    final priorityStart = (t['priority_time_start'] ?? '').toString();
+                    final priorityEnd = (t['priority_time_end'] ?? '').toString();
+                    final surcharge = _parseDouble(t['prime_time_surcharge']);
+                    final includesCoach = t['includes_coach'] == true;
+                    final minP = (t['min_participants'] as num?)?.toInt() ?? 1;
+                    final maxP = (t['max_participants'] as num?)?.toInt() ?? 1;
+                    final hasPriority = priorityStart.isNotEmpty && priorityEnd.isNotEmpty;
+                    final cardColor = _membershipCardColor(serviceType);
+                    final cardIcon = _membershipIcon(serviceType);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 14),
+                      decoration: BoxDecoration(
+                        color: Theme.of(ctx).cardColor,
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: cardColor.withValues(alpha: 0.3), width: 1.5),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                colors: [cardColor.withValues(alpha: 0.9), cardColor.withValues(alpha: 0.6)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ),
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                            ),
+                            child: Row(children: [
+                              Icon(cardIcon, color: Colors.white, size: 24),
+                              const SizedBox(width: 10),
+                              Expanded(child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(tName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16)),
+                                  Text(serviceTypeDisplay, style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12)),
+                                ],
+                              )),
+                              Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+                                Text('${_fmt0(price)}₸', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                                Text('$daysValid дней', style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12)),
+                              ]),
+                            ]),
+                          ),
+                          Padding(
+                            padding: const EdgeInsets.all(14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (desc.isNotEmpty) ...[
+                                  Text(desc, style: TextStyle(color: Colors.grey[600], fontSize: 13)),
+                                  const SizedBox(height: 10),
+                                ],
+                                Wrap(spacing: 8, runSpacing: 6, children: [
+                                  if (totalHours > 0)
+                                    _mBadge(Icons.schedule_rounded, '${totalHours.toStringAsFixed(0)} ч', cardColor),
+                                  if (hasPriority)
+                                    _mBadge(Icons.access_time_rounded, '${priorityStart.substring(0, 5)}–${priorityEnd.substring(0, 5)}', Colors.blueGrey),
+                                  if (surcharge > 0)
+                                    _mBadge(Icons.bolt_rounded, '+${_fmt0(surcharge.toString())}₸/ч прайм', Colors.orange),
+                                  if (includesCoach)
+                                    _mBadge(Icons.sports_rounded, 'Тренер включён', Colors.teal),
+                                  if (maxP > 1)
+                                    _mBadge(Icons.people_outline_rounded, '$minP–$maxP чел.', Colors.purple),
+                                ]),
+                                const SizedBox(height: 14),
+                                SizedBox(
+                                  width: double.infinity,
+                                  height: 46,
+                                  child: ElevatedButton(
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: cardColor,
+                                      foregroundColor: Colors.white,
+                                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    ),
+                                    onPressed: typeId == null
+                                        ? null
+                                        : () async {
+                                            Navigator.pop(ctx);
+                                            try {
+                                              await AppScope.instance.membershipRepository.buy(typeId);
+                                              if (!mounted) return;
+                                              setState(_reloadAll);
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(content: Text('Абонемент «$tName» оформлен!')),
+                                              );
+                                            } catch (e) {
+                                              if (!mounted) return;
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                SnackBar(content: Text(e.toString())),
+                                              );
+                                            }
+                                          },
+                                    child: const Text('Оформить', style: TextStyle(fontWeight: FontWeight.bold)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _fmt0(String raw) {
+    final d = double.tryParse(raw);
+    if (d == null) return raw;
+    return d.toStringAsFixed(0);
   }
 
   Widget _errorWidget(Object? e, VoidCallback retry) {
