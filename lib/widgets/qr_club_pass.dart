@@ -229,11 +229,11 @@ class _QrDialogState extends State<_QrDialog>
                         size: 200,
                         backgroundColor: Colors.white,
                         eyeStyle: const QrEyeStyle(
-                          eyeShape: QrEyeShape.roundedRect,
+                          eyeShape: QrEyeShape.square,
                           color: AppTheme.primaryColor,
                         ),
                         dataModuleStyle: const QrDataModuleStyle(
-                          dataModuleShape: QrDataModuleShape.roundedRect,
+                          dataModuleShape: QrDataModuleShape.circle,
                           color: AppTheme.primaryColor,
                         ),
                       ),
