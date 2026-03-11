@@ -25,6 +25,7 @@ class _SocialScreenState extends State<SocialScreen>
   late Future<List<Map<String, dynamic>>> _outgoingFuture;
   late Future<List<Map<String, dynamic>>> _searchFuture;
   late Future<List<Map<String, dynamic>>> _feedFuture;
+  late Future<List<Map<String, dynamic>>> _conversationsFuture;
 
   final _searchController = TextEditingController();
   Timer? _debounce;
@@ -66,6 +67,7 @@ class _SocialScreenState extends State<SocialScreen>
     _incomingFuture = AppScope.instance.socialRepository.incomingRequests();
     _outgoingFuture = AppScope.instance.socialRepository.outgoingRequests();
     _feedFuture = AppScope.instance.socialRepository.friendsFeed(limit: 20);
+    _conversationsFuture = AppScope.instance.chatRepository.conversations();
   }
 
   // ─── Search ───
@@ -1100,26 +1102,31 @@ class _SocialScreenState extends State<SocialScreen>
     );
   }
 
-  void _openChat(Map<String, dynamic> user) {
+  void _openChat(Map<String, dynamic> user, {Map<String, dynamic>? conversation}) {
     final name =
-        '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
+        '${user['full_name'] ?? ''}'.toString().trim().isNotEmpty
+            ? (user['full_name'] as String).trim()
+            : '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
     final avatar = user['avatar']?.toString();
     final userId = (user['id'] as num?)?.toInt();
     final avatarUrl = (avatar != null && avatar.isNotEmpty)
         ? avatar
         : 'https://i.pravatar.cc/150?img=${(userId ?? 1) % 70}';
 
+    final convId = (conversation?['id'] as num?)?.toInt();
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ChatScreen(
           friend: {
             'id': userId,
-            'name': name.isEmpty
-                ? (user['username'] ?? '').toString()
-                : name,
+            'name': name.isNotEmpty
+                ? name
+                : (user['username'] ?? '').toString(),
             'avatar': avatarUrl,
             'status': 'offline',
           },
+          conversationId: convId,
         ),
       ),
     );
@@ -2212,14 +2219,14 @@ class _SocialScreenState extends State<SocialScreen>
 
   Widget _buildMessagesTab() {
     return FutureBuilder<List<Map<String, dynamic>>>(
-      future: _friendsFuture,
+      future: _conversationsFuture,
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const Center(
               child: CircularProgressIndicator());
         }
-        final friends = snap.data ?? const [];
-        if (friends.isEmpty) {
+        final conversations = snap.data ?? const [];
+        if (conversations.isEmpty) {
           return Center(
               child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -2242,28 +2249,67 @@ class _SocialScreenState extends State<SocialScreen>
           onRefresh: () async => setState(_reloadAll),
           child: ListView.separated(
             padding: const EdgeInsets.all(16),
-            itemCount: friends.length,
+            itemCount: conversations.length,
             separatorBuilder: (_, __) =>
                 const Divider(height: 1),
             itemBuilder: (context, i) {
-              final u = friends[i];
-              final displayName = _displayName(u);
+              final conv = conversations[i];
+              final companion = (conv['companion'] as Map?)?.cast<String, dynamic>() ?? const {};
+              final last = (conv['last_message'] as Map?)?.cast<String, dynamic>() ?? const {};
+              final unread = (conv['unread_count'] as num?)?.toInt() ?? 0;
+
+              final name = (companion['full_name'] ??
+                      '${companion['first_name'] ?? ''} ${companion['last_name'] ?? ''}')
+                  .toString()
+                  .trim();
+              final phone = (companion['phone_number'] ?? '').toString();
+              final avatar = (companion['avatar'] ?? '').toString();
+              final lastText = (last['text'] ?? '').toString();
+
+              String subtitle;
+              if (lastText.isNotEmpty) {
+                subtitle = lastText;
+              } else if (phone.isNotEmpty) {
+                subtitle = phone;
+              } else {
+                subtitle = 'Нажмите, чтобы открыть диалог';
+              }
 
               return ListTile(
                 contentPadding: EdgeInsets.zero,
-                leading: _avatarWithStatus(u, radius: 24),
-                title: Text(displayName,
+                leading: _avatarWithStatus({
+                  'id': (companion['id'] as num?),
+                  'avatar': avatar,
+                  'first_name': companion['first_name'],
+                  'last_name': companion['last_name'],
+                }, radius: 24),
+                title: Text(name.isEmpty ? 'Игрок клуба' : name,
                     style: const TextStyle(
                         fontWeight: FontWeight.w600)),
-                subtitle: const Text(
-                    'Нажмите чтобы написать',
-                    style: TextStyle(
-                        fontSize: 12, color: Colors.grey)),
-                trailing: const Icon(
-                    Icons.chat_bubble_rounded,
-                    size: 18,
-                    color: AppTheme.primaryColor),
-                onTap: () => _openChat(u),
+                subtitle: Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.grey),
+                ),
+                trailing: unread > 0
+                    ? CircleAvatar(
+                        radius: 11,
+                        backgroundColor: AppTheme.primaryColor,
+                        child: Text(
+                          unread > 9 ? '9+' : '$unread',
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600),
+                        ),
+                      )
+                    : const Icon(
+                        Icons.chat_bubble_rounded,
+                        size: 18,
+                        color: AppTheme.primaryColor),
+                onTap: () => _openChat(companion, conversation: conv),
               );
             },
           ),

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import '../core/di/app_scope.dart';
 import '../theme/app_theme.dart';
 
 class ChatScreen extends StatefulWidget {
   final Map<String, dynamic> friend;
+  final int? conversationId;
 
-  const ChatScreen({super.key, required this.friend});
+  const ChatScreen({super.key, required this.friend, this.conversationId});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -12,23 +14,134 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   final TextEditingController _messageController = TextEditingController();
-  final List<Map<String, dynamic>> _messages = [
-    {'text': 'Привет! Как насчет игры в субботу?', 'isMe': false, 'time': '10:30'},
-    {'text': 'Привет! Да, отличная идея. Во сколько?', 'isMe': true, 'time': '10:32'},
-    {'text': 'Думаю, в 11:00 на втором корте будет идеально.', 'isMe': false, 'time': '10:35'},
-  ];
+  final List<Map<String, dynamic>> _messages = [];
+  int? _conversationId;
+  int? _lastMessageId;
+  int? _myUserId;
+  bool _loading = true;
+  bool _sending = false;
+  Timer? _pollTimer;
 
-  void _sendMessage() {
-    if (_messageController.text.trim().isEmpty) return;
+  @override
+  void initState() {
+    super.initState();
+    _initChat();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _initChat() async {
+    try {
+      final me = await AppScope.instance.authRepository.me();
+      _myUserId = (me['id'] as num?)?.toInt();
+
+      final friendId = (widget.friend['id'] as num?)?.toInt();
+
+      if (widget.conversationId != null) {
+        _conversationId = widget.conversationId;
+      } else if (friendId != null) {
+        final conv = await AppScope.instance.chatRepository.startConversation(friendId);
+        _conversationId = (conv['id'] as num?)?.toInt();
+      }
+
+      if (_conversationId != null) {
+        final msgs = await AppScope.instance.chatRepository.messages(_conversationId!, limit: 50);
+        _applyNewMessages(msgs);
+        await AppScope.instance.chatRepository.markRead(_conversationId!);
+        _startPolling();
+      }
+    } catch (_) {
+      // ignore for now, UI покажет просто пустой чат
+    } finally {
+      if (mounted) {
+        setState(() {
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      if (_conversationId == null) return;
+      try {
+        final msgs = await AppScope.instance.chatRepository
+            .messages(_conversationId!, after: _lastMessageId, limit: 50);
+        if (msgs.isNotEmpty && mounted) {
+          setState(() {
+            _applyNewMessages(msgs);
+          });
+          await AppScope.instance.chatRepository.markRead(_conversationId!);
+        }
+      } catch (_) {
+        // тихо игнорим ошибки polling
+      }
+    });
+  }
+
+  void _applyNewMessages(List<Map<String, dynamic>> raw) {
+    for (final m in raw) {
+      final id = (m['id'] as num?)?.toInt();
+      if (id == null) continue;
+      if (_messages.any((e) => e['id'] == id)) continue;
+      final createdAt = DateTime.tryParse((m['created_at'] ?? '').toString())?.toLocal();
+      final senderId = (m['sender_id'] as num?)?.toInt();
+      _messages.add({
+        'id': id,
+        'text': (m['text'] ?? '').toString(),
+        'isMe': _myUserId != null && senderId == _myUserId,
+        'time': createdAt != null
+            ? '${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}'
+            : '',
+      });
+      _lastMessageId = id;
+    }
+  }
+
+  Future<void> _sendMessage() async {
+    final text = _messageController.text.trim();
+    if (text.isEmpty || _conversationId == null || _sending) return;
 
     setState(() {
-      _messages.add({
-        'text': _messageController.text,
-        'isMe': true,
-        'time': '${DateTime.now().hour}:${DateTime.now().minute.toString().padLeft(2, '0')}',
-      });
-      _messageController.clear();
+      _sending = true;
     });
+    _messageController.clear();
+
+    try {
+      final res = await AppScope.instance.chatRepository.send(_conversationId!, text);
+      final createdAt = DateTime.tryParse((res['created_at'] ?? '').toString())?.toLocal();
+      final id = (res['id'] as num?)?.toInt();
+      final senderId = (res['sender_id'] as num?)?.toInt();
+
+      setState(() {
+        _messages.add({
+          'id': id,
+          'text': (res['text'] ?? '').toString(),
+          'isMe': _myUserId != null && senderId == _myUserId,
+          'time': createdAt != null
+              ? '${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}'
+              : '',
+        });
+        if (id != null) _lastMessageId = id;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Не удалось отправить сообщение')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _sending = false;
+        });
+      }
+    }
   }
 
   @override
@@ -63,22 +176,31 @@ class _ChatScreenState extends State<ChatScreen> {
           IconButton(icon: const Icon(Icons.info_outline), onPressed: () {}),
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              reverse: true, // Последние сообщения внизу
-              itemCount: _messages.length,
-              itemBuilder: (context, index) {
-                final msg = _messages.reversed.toList()[index];
-                return _buildMessageBubble(msg, isDark);
-              },
+      body: _loading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                Expanded(
+                  child: _messages.isEmpty
+                      ? const Center(
+                          child: Text(
+                            'Начните диалог с сообщением',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        )
+                      : ListView.builder(
+                          padding: const EdgeInsets.all(16),
+                          reverse: true, // Последние сообщения внизу
+                          itemCount: _messages.length,
+                          itemBuilder: (context, index) {
+                            final msg = _messages[_messages.length - 1 - index];
+                            return _buildMessageBubble(msg, isDark);
+                          },
+                        ),
+                ),
+                _buildMessageInput(isDark, theme),
+              ],
             ),
-          ),
-          _buildMessageInput(isDark, theme),
-        ],
-      ),
     );
   }
 

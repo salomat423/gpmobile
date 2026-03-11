@@ -5,6 +5,7 @@ import '../../features/booking/data/booking_repository.dart';
 import '../../features/memberships/data/membership_repository.dart';
 import '../../features/secondary/data/secondary_repository.dart';
 import '../../features/social/data/social_repository.dart';
+import '../../features/chat/data/chat_repository.dart';
 import '../network/api_client.dart';
 import '../storage/token_storage.dart';
 
@@ -16,7 +17,8 @@ class AppScope {
         bookingRepository = BookingRepository(ApiClient.instance),
         membershipRepository = MembershipRepository(ApiClient.instance),
         socialRepository = SocialRepository(ApiClient.instance),
-        secondaryRepository = SecondaryRepository(ApiClient.instance);
+        secondaryRepository = SecondaryRepository(ApiClient.instance),
+        chatRepository = ChatRepository(ApiClient.instance);
 
   static final AppScope instance = AppScope._();
 
@@ -25,6 +27,7 @@ class AppScope {
   final MembershipRepository membershipRepository;
   final SocialRepository socialRepository;
   final SecondaryRepository secondaryRepository;
+  final ChatRepository chatRepository;
 
   final ValueNotifier<AuthState> authState = ValueNotifier<AuthState>(AuthState.unknown);
 
