@@ -113,7 +113,7 @@ class SocialRepository {
   }
 
   Future<Map<String, dynamic>> sendFriendRequest(int toUserId) async {
-    final data = await _api.post('/friends/add/', data: {'user_id': toUserId});
+    final data = await _api.post('/friends/send/', data: {'to_user_id': toUserId});
     return Map<String, dynamic>.from(data as Map);
   }
 
@@ -138,7 +138,7 @@ class SocialRepository {
   }
 
   Future<Map<String, dynamic>> removeFriend(int userId) async {
-    final data = await _api.delete('/friends/$userId/remove/');
+    final data = await _api.post('/friends/remove/', data: {'user_id': userId});
     return Map<String, dynamic>.from(data as Map);
   }
 
@@ -180,7 +180,7 @@ class SocialRepository {
 
   Future<List<Map<String, dynamic>>> notifications({bool? unread, String? type}) async {
     final qp = <String, dynamic>{};
-    if (unread != null) qp['is_read'] = !unread;
+    if (unread != null) qp['unread'] = unread;
     if (type != null && type.isNotEmpty) qp['type'] = type;
     final data = await _api.get('/notifications/', queryParameters: qp.isEmpty ? null : qp);
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
