@@ -16,6 +16,8 @@ class LobbyDetailScreen extends StatefulWidget {
 class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
   late Future<Map<String, dynamic>> _detailFuture;
   late Future<List<Map<String, dynamic>>> _proposalsFuture;
+  Future<Map<String, dynamic>>? _extrasFuture;
+  Future<Map<String, dynamic>>? _paymentStatusFuture;
   int? _myUserId;
 
   @override
@@ -36,11 +38,31 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
   void _reload() {
     _detailFuture = AppScope.instance.socialRepository.lobbyDetail(widget.lobbyId);
     _proposalsFuture = AppScope.instance.socialRepository.lobbyProposals(widget.lobbyId);
+    _extrasFuture = AppScope.instance.socialRepository.myExtras(widget.lobbyId);
+    _paymentStatusFuture = AppScope.instance.socialRepository.paymentStatus(widget.lobbyId);
   }
 
   bool _isCreator(Map<String, dynamic> lobby) {
     if (_myUserId == null) return false;
     return (lobby['creator'] as num?)?.toInt() == _myUserId;
+  }
+
+  bool _isParticipant(List<Map<String, dynamic>> participants) {
+    if (_myUserId == null) return false;
+    return participants.any((p) {
+      final uid = ((p['user'] ?? p['id']) as num?)?.toInt();
+      return uid == _myUserId;
+    });
+  }
+
+  bool _iAlreadyPaid(List<Map<String, dynamic>> participants) {
+    if (_myUserId == null) return false;
+    final me = participants.where((p) {
+      final uid = ((p['user'] ?? p['id']) as num?)?.toInt();
+      return uid == _myUserId;
+    });
+    if (me.isEmpty) return false;
+    return me.first['is_paid'] == true;
   }
 
   Future<void> _doAction(Future<dynamic> Function() action, [String? successMsg]) async {
@@ -124,6 +146,8 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
           final format = (lobby['game_format'] ?? '').toString();
           final isFull = playersCount >= maxPlayers;
           final isCreator = _isCreator(lobby);
+          final isParticipant = _isParticipant(participantsList);
+          final iAlreadyPaid = _iAlreadyPaid(participantsList);
 
           return RefreshIndicator(
             onRefresh: () async => setState(_reload),
@@ -134,7 +158,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                 const SizedBox(height: 16),
                 _playersSection(participantsList, isDark, status),
                 const SizedBox(height: 16),
-                _actionsSection(status, isFull, lobby, isCreator),
+                _actionsSection(status, isFull, lobby, isCreator, isParticipant, iAlreadyPaid),
                 const SizedBox(height: 16),
                 if (status == 'NEGOTIATING' || status == 'READY' || status == 'BOOKED')
                   _proposalsSection(isDark, lobby, isCreator),
@@ -345,12 +369,13 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
 
   // ─── Actions ───
 
-  Widget _actionsSection(String status, bool isFull, Map<String, dynamic> lobby, bool isCreator) {
+  Widget _actionsSection(String status, bool isFull, Map<String, dynamic> lobby, bool isCreator, bool isParticipant, bool iAlreadyPaid) {
     final id = widget.lobbyId;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if ((status == 'OPEN' || status == 'WAITING') && !isFull)
+        // Join: only if not already a participant and lobby not full
+        if ((status == 'OPEN' || status == 'WAITING') && !isFull && !isParticipant)
           ElevatedButton.icon(
             onPressed: () => _confirmAndDo(
               title: 'Вступить в лобби?',
@@ -362,7 +387,8 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
             icon: const Icon(Icons.login),
             label: const Text('Вступить'),
           ),
-        if (status == 'OPEN' || status == 'WAITING' || status == 'NEGOTIATING')
+        // Leave: only if participant and not yet booked
+        if ((status == 'OPEN' || status == 'WAITING' || status == 'NEGOTIATING') && isParticipant)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: OutlinedButton.icon(
@@ -378,7 +404,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               label: const Text('Покинуть', style: TextStyle(color: Colors.redAccent)),
             ),
           ),
-        if (status == 'NEGOTIATING')
+        if (status == 'NEGOTIATING' && isParticipant)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: ElevatedButton.icon(
@@ -387,11 +413,25 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
               label: const Text('Предложить время/корт'),
             ),
           ),
-        if (status == 'BOOKED')
+        // Pay: only if booked, is participant, and not yet paid
+        if (status == 'BOOKED' && isParticipant && !iAlreadyPaid)
           ElevatedButton.icon(
             onPressed: () => _showPayDialog(),
             icon: const Icon(Icons.payment),
             label: const Text('Оплатить свою долю'),
+          ),
+        if (status == 'BOOKED' && isParticipant && iAlreadyPaid)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            decoration: BoxDecoration(
+              color: Colors.green.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              Icon(Icons.check_circle_rounded, color: Colors.green, size: 20),
+              SizedBox(width: 8),
+              Text('Ваша доля оплачена', style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600)),
+            ]),
           ),
         if (isCreator && (status == 'OPEN' || status == 'WAITING' || status == 'NEGOTIATING'))
           Padding(
@@ -673,7 +713,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
         ),
         const SizedBox(height: 4),
         FutureBuilder<Map<String, dynamic>>(
-          future: AppScope.instance.socialRepository.myExtras(id),
+          future: _extrasFuture,
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) return const LinearProgressIndicator();
             if (snap.hasError) return Text(snap.error.toString(), style: const TextStyle(fontSize: 12, color: Colors.redAccent));
@@ -847,7 +887,7 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
         const Text('Оплата', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
         const SizedBox(height: 8),
         FutureBuilder<Map<String, dynamic>>(
-          future: AppScope.instance.socialRepository.paymentStatus(id),
+          future: _paymentStatusFuture,
           builder: (context, snap) {
             if (snap.connectionState == ConnectionState.waiting) return const LinearProgressIndicator();
             if (snap.hasError) return Text(snap.error.toString());

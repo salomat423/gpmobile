@@ -363,33 +363,192 @@ class _CoachScheduleScreenState extends State<CoachScheduleScreen> {
   void _showPlayersForMatch(List players, Map<String, dynamic> booking) {
     final parsed = players
         .whereType<Map>()
-        .map((p) => {'id': p['id'], 'name': (p['name'] ?? '').toString()})
+        .map((p) => {'id': (p['id'] as num?)?.toInt(), 'name': (p['name'] ?? '').toString()})
+        .where((p) => p['id'] != null)
         .toList();
+
+    if (parsed.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Нет игроков для создания матча')),
+      );
+      return;
+    }
+
+    final courtId = (booking['court'] as num?)?.toInt();
+
+    // Pre-split: first half → A, second half → B
+    final mid = (parsed.length / 2).ceil();
+    final teamAIds = parsed.sublist(0, mid).map((p) => p['id'] as int).toList();
+    final teamBIds = parsed.sublist(mid).map((p) => p['id'] as int).toList();
+    final teamANames = parsed.sublist(0, mid).map((p) => p['name'] as String).toList();
+    final teamBNames = parsed.sublist(mid).map((p) => p['name'] as String).toList();
+
+    final scoreCtrl = TextEditingController();
+    String winner = 'A';
 
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          const Text('Игроки для матча', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-          const SizedBox(height: 16),
-          ...parsed.map((p) => ListTile(
-                leading: CircleAvatar(child: Text((p['name'] as String).isNotEmpty ? (p['name'] as String)[0] : '?')),
-                title: Text(p['name'] as String),
-                subtitle: Text('ID: ${p['id']}'),
-              )),
-          const SizedBox(height: 12),
-          const Text(
-            'Используйте этих игроков при создании матча на вкладке "Матчи"',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Colors.grey, fontSize: 13),
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => Padding(
+          padding: EdgeInsets.only(
+            left: 20, right: 20, top: 16,
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
           ),
-          const SizedBox(height: 16),
-        ]),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Center(
+              child: Container(width: 40, height: 4,
+                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
+            ),
+            const SizedBox(height: 16),
+            const Text('Записать матч', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+            const SizedBox(height: 16),
+
+            // Teams
+            Row(children: [
+              Expanded(
+                child: _teamColumn('Команда A', teamANames, AppTheme.primaryColor),
+              ),
+              const SizedBox(width: 12),
+              const Text('VS', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.grey)),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _teamColumn('Команда B', teamBNames, Colors.orange),
+              ),
+            ]),
+            const SizedBox(height: 16),
+
+            // Score
+            TextField(
+              controller: scoreCtrl,
+              decoration: InputDecoration(
+                labelText: 'Счёт (например 6:4)',
+                prefixIcon: const Icon(Icons.scoreboard_outlined),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              keyboardType: TextInputType.text,
+            ),
+            const SizedBox(height: 16),
+
+            // Winner
+            const Text('Победитель', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+            const SizedBox(height: 8),
+            Row(children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setSheet(() => winner = 'A'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: winner == 'A' ? AppTheme.primaryColor : Colors.grey.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(child: Text('Команда A',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: winner == 'A' ? Colors.white : null,
+                      ))),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => setSheet(() => winner = 'B'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    decoration: BoxDecoration(
+                      color: winner == 'B' ? Colors.orange : Colors.grey.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Center(child: Text('Команда B',
+                      style: TextStyle(
+                        fontWeight: FontWeight.w700,
+                        color: winner == 'B' ? Colors.white : null,
+                      ))),
+                  ),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 20),
+
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: ElevatedButton.icon(
+                onPressed: () async {
+                  final score = scoreCtrl.text.trim();
+                  if (score.isEmpty) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(
+                      const SnackBar(content: Text('Введите счёт матча')),
+                    );
+                    return;
+                  }
+                  Navigator.pop(ctx);
+                  try {
+                    await AppScope.instance.socialRepository.createMatch(
+                      teamA: teamAIds,
+                      teamB: teamBIds,
+                      score: score,
+                      winnerTeam: winner,
+                      court: courtId,
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('✅ Матч записан! ELO обновлено.'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Ошибка: $e')),
+                      );
+                    }
+                  }
+                },
+                icon: const Icon(Icons.emoji_events_rounded),
+                label: const Text('Записать результат', style: TextStyle(fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ]),
+        ),
       ),
+    );
+  }
+
+  Widget _teamColumn(String title, List<String> names, Color color) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(title, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: color)),
+        const SizedBox(height: 6),
+        ...names.map((n) => Padding(
+          padding: const EdgeInsets.only(bottom: 4),
+          child: Row(children: [
+            CircleAvatar(radius: 12, backgroundColor: color.withValues(alpha: 0.2),
+              child: Text(n.isNotEmpty ? n[0].toUpperCase() : '?',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color))),
+            const SizedBox(width: 6),
+            Expanded(child: Text(n, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+          ]),
+        )),
+      ]),
     );
   }
 

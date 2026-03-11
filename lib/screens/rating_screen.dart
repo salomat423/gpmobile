@@ -3,13 +3,14 @@ import 'package:flutter/material.dart';
 import '../core/di/app_scope.dart';
 import '../theme/app_theme.dart';
 
+// League config aligned with API thresholds
 const _leagueConfig = <String, _LeagueData>{
-  'Bronze':   _LeagueData(icon: Icons.shield_outlined,   min: 0,    max: 1200, label: 'Бронза'),
-  'Silver':   _LeagueData(icon: Icons.shield,            min: 1200, max: 1500, label: 'Серебро'),
-  'Gold':     _LeagueData(icon: Icons.workspace_premium,  min: 1500, max: 1800, label: 'Золото'),
-  'Platinum': _LeagueData(icon: Icons.diamond_outlined,   min: 1800, max: 2100, label: 'Платина'),
-  'Diamond':  _LeagueData(icon: Icons.diamond,            min: 2100, max: 2500, label: 'Бриллиант'),
-  'Master':   _LeagueData(icon: Icons.emoji_events,       min: 2500, max: 3000, label: 'Мастер'),
+  'Новичок': _LeagueData(icon: Icons.shield_outlined,    min: 0,    max: 1000,  label: 'Новичок',  color: Color(0xFF78909c)),
+  'Бронза':  _LeagueData(icon: Icons.shield,             min: 1000, max: 1200,  label: 'Бронза',   color: Color(0xFFcd7f32)),
+  'Серебро': _LeagueData(icon: Icons.workspace_premium,  min: 1200, max: 1400,  label: 'Серебро',  color: Color(0xFF9e9e9e)),
+  'Золото':  _LeagueData(icon: Icons.emoji_events,       min: 1400, max: 1600,  label: 'Золото',   color: Color(0xFFffd700)),
+  'Платина': _LeagueData(icon: Icons.diamond_outlined,   min: 1600, max: 1800,  label: 'Платина',  color: Color(0xFF00bcd4)),
+  'Элита':   _LeagueData(icon: Icons.diamond,            min: 1800, max: 99999, label: 'Элита',    color: Color(0xFFe91e63)),
 };
 
 class _LeagueData {
@@ -17,11 +18,14 @@ class _LeagueData {
   final int min;
   final int max;
   final String label;
-  const _LeagueData({required this.icon, required this.min, required this.max, required this.label});
+  final Color color;
+  const _LeagueData({required this.icon, required this.min, required this.max, required this.label, required this.color});
 }
 
 _LeagueData _resolveLeague(String name, int elo) {
-  return _leagueConfig[name] ?? _leagueConfig.values.firstWhere(
+  // Try exact name match first (from API), then fallback by ELO
+  if (_leagueConfig.containsKey(name)) return _leagueConfig[name]!;
+  return _leagueConfig.values.firstWhere(
     (l) => elo >= l.min && elo < l.max,
     orElse: () => _leagueConfig.values.first,
   );

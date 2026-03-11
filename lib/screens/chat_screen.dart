@@ -129,6 +129,9 @@ class _ChatScreenState extends State<ChatScreen> {
         'time': createdAt != null
             ? '${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}'
             : '',
+        'date': createdAt != null
+            ? '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}'
+            : '',
       };
 
       if (existingIdx >= 0) {
@@ -184,6 +187,9 @@ class _ChatScreenState extends State<ChatScreen> {
           'isRead': res['is_read'] == true,
           'time': createdAt != null
               ? '${createdAt.hour.toString().padLeft(2, '0')}:${createdAt.minute.toString().padLeft(2, '0')}'
+              : '',
+          'date': createdAt != null
+              ? '${createdAt.year}-${createdAt.month.toString().padLeft(2, '0')}-${createdAt.day.toString().padLeft(2, '0')}'
               : '',
         });
         if (id != null && (_lastMessageId == null || id > _lastMessageId!)) {
@@ -298,9 +304,19 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   String _dayLabel(Map<String, dynamic> msg) {
-    final time = (msg['time'] ?? '').toString();
-    // time хранит только HH:mm, дату не храним — используем как fallback
-    return time.isNotEmpty ? 'Сегодня' : '';
+    final date = (msg['date'] ?? '').toString();
+    if (date.isEmpty) return '';
+    final dt = DateTime.tryParse(date);
+    if (dt == null) return date;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = today.subtract(const Duration(days: 1));
+    final msgDay = DateTime(dt.year, dt.month, dt.day);
+    if (msgDay == today) return 'Сегодня';
+    if (msgDay == yesterday) return 'Вчера';
+    const months = ['', 'янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+    final label = '${dt.day} ${months[dt.month]}';
+    return dt.year != now.year ? '$label ${dt.year}' : label;
   }
 
   Widget _buildMessageBubble(Map<String, dynamic> msg, bool isDark) {

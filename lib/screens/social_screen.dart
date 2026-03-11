@@ -1105,10 +1105,10 @@ class _SocialScreenState extends State<SocialScreen>
   }
 
   void _openChat(Map<String, dynamic> user, {Map<String, dynamic>? conversation}) {
-    final name =
-        '${user['full_name'] ?? ''}'.toString().trim().isNotEmpty
-            ? (user['full_name'] as String).trim()
-            : '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
+    final fullName = (user['full_name'] ?? '').toString().trim();
+    final name = fullName.isNotEmpty
+        ? fullName
+        : '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
     final avatar = user['avatar']?.toString();
     final userId = (user['id'] as num?)?.toInt();
     final avatarUrl = (avatar != null && avatar.isNotEmpty)
