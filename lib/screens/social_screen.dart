@@ -67,7 +67,9 @@ class _SocialScreenState extends State<SocialScreen>
     _incomingFuture = AppScope.instance.socialRepository.incomingRequests();
     _outgoingFuture = AppScope.instance.socialRepository.outgoingRequests();
     _feedFuture = AppScope.instance.socialRepository.friendsFeed(limit: 20);
-    _conversationsFuture = AppScope.instance.chatRepository.conversations();
+    _conversationsFuture = AppScope.instance.chatRepository
+        .conversations()
+        .catchError((_) => <Map<String, dynamic>>[]);
   }
 
   // ─── Search ───
@@ -2225,25 +2227,12 @@ class _SocialScreenState extends State<SocialScreen>
           return const Center(
               child: CircularProgressIndicator());
         }
+        if (snap.hasError) {
+          return _buildMessagesFromFriends();
+        }
         final conversations = snap.data ?? const [];
         if (conversations.isEmpty) {
-          return Center(
-              child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                Icon(Icons.chat_bubble_outline_rounded,
-                    size: 56,
-                    color:
-                        Colors.grey.withValues(alpha: 0.4)),
-                const SizedBox(height: 12),
-                const Text('Нет чатов',
-                    style: TextStyle(color: Colors.grey)),
-                const SizedBox(height: 4),
-                const Text(
-                    'Добавьте друзей чтобы начать общение',
-                    style: TextStyle(
-                        color: Colors.grey, fontSize: 12)),
-              ]));
+          return _buildMessagesFromFriends();
         }
         return RefreshIndicator(
           onRefresh: () async => setState(_reloadAll),
@@ -2310,6 +2299,54 @@ class _SocialScreenState extends State<SocialScreen>
                         size: 18,
                         color: AppTheme.primaryColor),
                 onTap: () => _openChat(companion, conversation: conv),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildMessagesFromFriends() {
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _friendsFuture,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final friends = snap.data ?? const [];
+        if (friends.isEmpty) {
+          return Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Icon(Icons.chat_bubble_outline_rounded,
+                  size: 56, color: Colors.grey.withValues(alpha: 0.4)),
+              const SizedBox(height: 12),
+              const Text('Нет чатов', style: TextStyle(color: Colors.grey)),
+              const SizedBox(height: 4),
+              const Text('Добавьте друзей чтобы начать общение',
+                  style: TextStyle(color: Colors.grey, fontSize: 12)),
+            ]),
+          );
+        }
+        return RefreshIndicator(
+          onRefresh: () async => setState(_reloadAll),
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: friends.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, i) {
+              final u = friends[i];
+              final displayName = _displayName(u);
+              return ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: _avatarWithStatus(u, radius: 24),
+                title: Text(displayName,
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Нажмите чтобы написать',
+                    style: TextStyle(fontSize: 12, color: Colors.grey)),
+                trailing: const Icon(Icons.chat_bubble_rounded,
+                    size: 18, color: AppTheme.primaryColor),
+                onTap: () => _openChat(u),
               );
             },
           ),

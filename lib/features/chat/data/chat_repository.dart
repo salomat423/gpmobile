@@ -1,24 +1,18 @@
-import 'package:dio/dio.dart';
-
 import '../../../core/network/api_client.dart';
 
 class ChatRepository {
-  ChatRepository(ApiClient client) : _dio = client.dio;
-
-  final Dio _dio;
+  ChatRepository(this._api);
+  final ApiClient _api;
 
   Future<List<Map<String, dynamic>>> conversations() async {
-    final res = await _dio.get('/chat/conversations/');
-    final data = res.data as List<dynamic>? ?? const [];
-    return data.cast<Map<String, dynamic>>();
+    final data = await _api.get('/chat/conversations/');
+    if (data is List) return data.cast<Map<String, dynamic>>();
+    return const [];
   }
 
   Future<Map<String, dynamic>> startConversation(int userId) async {
-    final res = await _dio.post(
-      '/chat/conversations/start/',
-      data: {'user_id': userId},
-    );
-    return (res.data as Map).cast<String, dynamic>();
+    final data = await _api.post('/chat/conversations/start/', data: {'user_id': userId});
+    return (data as Map).cast<String, dynamic>();
   }
 
   Future<List<Map<String, dynamic>>> messages(
@@ -26,36 +20,37 @@ class ChatRepository {
     int? after,
     int limit = 50,
   }) async {
-    final query = <String, dynamic>{'limit': limit};
-    if (after != null) query['after'] = after;
-    final res = await _dio.get(
+    final qp = <String, dynamic>{'limit': limit};
+    if (after != null) qp['after'] = after;
+    final data = await _api.get(
       '/chat/conversations/$conversationId/messages/',
-      queryParameters: query,
+      queryParameters: qp,
     );
-    final data = res.data as List<dynamic>? ?? const [];
-    return data.cast<Map<String, dynamic>>();
+    if (data is List) return data.cast<Map<String, dynamic>>();
+    return const [];
   }
 
   Future<Map<String, dynamic>> send(int conversationId, String text) async {
-    final res = await _dio.post(
+    final data = await _api.post(
       '/chat/conversations/$conversationId/send/',
       data: {'text': text},
     );
-    return (res.data as Map).cast<String, dynamic>();
+    return (data as Map).cast<String, dynamic>();
   }
 
   Future<int> markRead(int conversationId) async {
-    final res = await _dio.post(
-      '/chat/conversations/$conversationId/read/',
-    );
-    final data = (res.data as Map).cast<String, dynamic>();
-    return (data['marked_read'] as num?)?.toInt() ?? 0;
+    final data = await _api.post('/chat/conversations/$conversationId/read/');
+    if (data is Map) {
+      return ((data as Map).cast<String, dynamic>()['marked_read'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
   }
 
   Future<int> unreadCount() async {
-    final res = await _dio.get('/chat/unread-count/');
-    final data = (res.data as Map).cast<String, dynamic>();
-    return (data['unread_count'] as num?)?.toInt() ?? 0;
+    final data = await _api.get('/chat/unread-count/');
+    if (data is Map) {
+      return ((data as Map).cast<String, dynamic>()['unread_count'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
   }
 }
-
