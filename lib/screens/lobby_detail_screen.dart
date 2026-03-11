@@ -37,9 +37,16 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
 
   void _reload() {
     _detailFuture = AppScope.instance.socialRepository.lobbyDetail(widget.lobbyId);
-    _proposalsFuture = AppScope.instance.socialRepository.lobbyProposals(widget.lobbyId);
-    _extrasFuture = AppScope.instance.socialRepository.myExtras(widget.lobbyId);
-    _paymentStatusFuture = AppScope.instance.socialRepository.paymentStatus(widget.lobbyId);
+    // Participant-only endpoints — silently return empty on 403/400
+    _proposalsFuture = AppScope.instance.socialRepository
+        .lobbyProposals(widget.lobbyId)
+        .catchError((_) => <Map<String, dynamic>>[]);
+    _extrasFuture = AppScope.instance.socialRepository
+        .myExtras(widget.lobbyId)
+        .catchError((_) => <String, dynamic>{});
+    _paymentStatusFuture = AppScope.instance.socialRepository
+        .paymentStatus(widget.lobbyId)
+        .catchError((_) => <String, dynamic>{});
   }
 
   bool _isCreator(Map<String, dynamic> lobby) {
@@ -160,13 +167,15 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
                 const SizedBox(height: 16),
                 _actionsSection(status, isFull, lobby, isCreator, isParticipant, iAlreadyPaid),
                 const SizedBox(height: 16),
-                if (status == 'NEGOTIATING' || status == 'READY' || status == 'BOOKED')
+                // Proposals: only participants can view and interact
+                if (isParticipant && (status == 'NEGOTIATING' || status == 'READY' || status == 'BOOKED'))
                   _proposalsSection(isDark, lobby, isCreator),
                 if (status == 'READY' && isCreator) ...[
                   const SizedBox(height: 12),
                   _teamAssignmentSection(participantsList, lobby),
                 ],
-                if (status == 'BOOKED' || status == 'PAID') ...[
+                // Extras / payment: only for participants
+                if (isParticipant && (status == 'BOOKED' || status == 'PAID')) ...[
                   _extrasSection(lobby),
                   const SizedBox(height: 16),
                   _paymentSection(lobby),
