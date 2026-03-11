@@ -439,23 +439,70 @@ class _LobbyDetailScreenState extends State<LobbyDetailScreen> {
             label: const Text('Оплатить свою долю'),
           ),
         if (status == 'BOOKED' && isParticipant && iAlreadyPaid)
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 12),
-            decoration: BoxDecoration(
-              color: Colors.green.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Icon(Icons.check_circle_rounded, color: Colors.green, size: 20),
-              SizedBox(width: 8),
-              Text('Ваша доля оплачена', style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600)),
-            ]),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  Icon(Icons.check_circle_rounded, color: Colors.green, size: 20),
+                  SizedBox(width: 8),
+                  Text('Ваша доля оплачена', style: TextStyle(color: Colors.green, fontWeight: FontWeight.w600)),
+                ]),
+              ),
+              const SizedBox(height: 8),
+              // Cancel after payment — warn about possible non-refund
+              OutlinedButton.icon(
+                onPressed: () => _confirmAndDo(
+                  title: 'Отменить участие?',
+                  message: 'Вы уже оплатили свою долю. Возврат средств зависит от политики клуба. Вы уверены, что хотите отменить участие?',
+                  confirmLabel: 'Отменить участие',
+                  isDestructive: true,
+                  action: () => AppScope.instance.socialRepository.leaveLobby(id),
+                  successMsg: 'Вы отменили участие',
+                ),
+                icon: const Icon(Icons.cancel_outlined, color: Colors.redAccent),
+                label: const Text('Отменить участие', style: TextStyle(color: Colors.redAccent)),
+                style: OutlinedButton.styleFrom(side: const BorderSide(color: Colors.redAccent)),
+              ),
+            ],
           ),
-        if (isCreator && (status == 'OPEN' || status == 'WAITING' || status == 'NEGOTIATING'))
+        // Participant cancellation for BOOKED (not yet paid)
+        if (status == 'BOOKED' && isParticipant && !iAlreadyPaid)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: OutlinedButton.icon(
-              onPressed: () => _doAction(() => AppScope.instance.socialRepository.closeLobby(id), 'Лобби закрыто'),
+              onPressed: () => _confirmAndDo(
+                title: 'Отменить участие?',
+                message: 'Вы уверены, что хотите отменить участие в этом лобби?',
+                confirmLabel: 'Отменить',
+                isDestructive: true,
+                action: () => AppScope.instance.socialRepository.leaveLobby(id),
+                successMsg: 'Вы отменили участие',
+              ),
+              icon: const Icon(Icons.logout, color: Colors.redAccent),
+              label: const Text('Отменить участие', style: TextStyle(color: Colors.redAccent)),
+            ),
+          ),
+        // Creator: close lobby at any non-terminal status
+        if (isCreator && status != 'PAID' && status != 'CLOSED')
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: OutlinedButton.icon(
+              onPressed: () => _confirmAndDo(
+                title: 'Закрыть лобби?',
+                message: status == 'BOOKED'
+                    ? 'Бронь будет отменена. Возврат средств зависит от политики клуба.'
+                    : 'Лобби будет закрыто для всех участников.',
+                confirmLabel: 'Закрыть',
+                isDestructive: true,
+                action: () => AppScope.instance.socialRepository.closeLobby(id),
+                successMsg: 'Лобби закрыто',
+              ),
               icon: Icon(Icons.close_rounded, color: Colors.grey[600]),
               label: Text('Закрыть лобби', style: TextStyle(color: Colors.grey[600])),
               style: OutlinedButton.styleFrom(side: BorderSide(color: Colors.grey.withValues(alpha: 0.3))),
