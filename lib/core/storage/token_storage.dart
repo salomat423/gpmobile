@@ -56,4 +56,9 @@ class TokenStorage {
     final access = await readAccessToken();
     return access != null && access.isNotEmpty;
   }
+
+  Future<String?> readRole() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_kRole);
+  }
 }

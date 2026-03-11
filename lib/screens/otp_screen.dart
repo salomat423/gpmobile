@@ -5,6 +5,7 @@ import '../core/network/api_error.dart';
 
 import '../theme/app_theme.dart';
 import 'main_wrapper.dart';
+import 'trainer_main_wrapper.dart';
 
 class OtpScreen extends StatefulWidget {
   final String phoneNumber;
@@ -57,6 +58,8 @@ class _OtpScreenState extends State<OtpScreen> {
       final isNewUser = result['is_new_user'] == true;
       final isProfileComplete = result['is_profile_complete'] == true;
       final access = (result['access'] ?? '').toString();
+      final role = (result['role'] ?? '').toString().toUpperCase();
+      final isCoach = role == 'COACH_PADEL' || role == 'COACH_FITNESS';
 
       if (isNewUser || !isProfileComplete) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -64,13 +67,14 @@ class _OtpScreenState extends State<OtpScreen> {
             builder: (_) => ProfileSetupScreen(
               accessToken: access,
               phoneNumber: widget.phoneNumber,
+              isCoach: isCoach,
             ),
           ),
               (route) => false,
         );
       } else {
         Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const MainWrapper()),
+          MaterialPageRoute(builder: (_) => isCoach ? const TrainerMainWrapper() : const MainWrapper()),
               (route) => false,
         );
       }
@@ -194,8 +198,9 @@ class _OtpScreenState extends State<OtpScreen> {
 class ProfileSetupScreen extends StatefulWidget {
   final String accessToken;
   final String phoneNumber;
+  final bool isCoach;
 
-  const ProfileSetupScreen({super.key, required this.accessToken, required this.phoneNumber});
+  const ProfileSetupScreen({super.key, required this.accessToken, required this.phoneNumber, this.isCoach = false});
 
   @override
   State<ProfileSetupScreen> createState() => _ProfileSetupScreenState();
@@ -226,7 +231,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       if (!mounted) return;
       AppScope.instance.authState.value = AuthState.authenticated;
       Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute(builder: (_) => const MainWrapper()),
+        MaterialPageRoute(builder: (_) => widget.isCoach ? const TrainerMainWrapper() : const MainWrapper()),
             (route) => false,
       );
     } catch (e) {
