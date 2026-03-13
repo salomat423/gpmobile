@@ -24,8 +24,11 @@ class SecondaryRepository {
     return Map<String, dynamic>.from(data as Map);
   }
 
-  Future<List<Map<String, dynamic>>> services() async {
-    final data = await _api.get('/inventory/services/');
+  Future<List<Map<String, dynamic>>> services({String? group, String? category}) async {
+    final qp = <String, dynamic>{};
+    if (group != null && group.isNotEmpty) qp['group'] = group;
+    if (category != null && category.isNotEmpty) qp['category'] = category;
+    final data = await _api.get('/inventory/services/', queryParameters: qp.isEmpty ? null : qp);
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 

@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:dio/dio.dart';
 import 'package:uuid/uuid.dart';
 
 import '../../../core/network/api_client.dart';
@@ -82,6 +83,14 @@ class AuthRepository {
 
   Future<Map<String, dynamic>> updateMe(Map<String, dynamic> payload) async {
     final data = await _api.patch('/auth/users/me/', data: payload);
+    return Map<String, dynamic>.from(data as Map);
+  }
+
+  Future<Map<String, dynamic>> uploadAvatar(String filePath) async {
+    final formData = FormData.fromMap({
+      'avatar': await MultipartFile.fromFile(filePath),
+    });
+    final data = await _api.patch('/auth/users/me/', data: formData);
     return Map<String, dynamic>.from(data as Map);
   }
 

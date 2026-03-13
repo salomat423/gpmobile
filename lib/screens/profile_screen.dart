@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../core/di/app_scope.dart';
@@ -113,12 +114,73 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  // ── Photo upload placeholder ─────────────────────────────────────────
+  // ── Avatar upload ───────────────────────────────────────────────────
+
+  bool _uploadingAvatar = false;
 
   void _onAvatarTap() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Загрузка фото будет доступна в ближайшем обновлении')),
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)),
+            ),
+            const SizedBox(height: 16),
+            const Text('Выберите источник', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+            const SizedBox(height: 12),
+            ListTile(
+              leading: const Icon(Icons.photo_library_outlined, color: AppTheme.primaryColor),
+              title: const Text('Галерея'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAndUploadAvatar(ImageSource.gallery);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt_outlined, color: AppTheme.primaryColor),
+              title: const Text('Камера'),
+              onTap: () {
+                Navigator.pop(ctx);
+                _pickAndUploadAvatar(ImageSource.camera);
+              },
+            ),
+            const SizedBox(height: 12),
+          ],
+        ),
+      ),
     );
+  }
+
+  Future<void> _pickAndUploadAvatar(ImageSource source) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final picker = ImagePicker();
+      final picked = await picker.pickImage(source: source, maxWidth: 800, maxHeight: 800, imageQuality: 85);
+      if (picked == null) return;
+
+      setState(() => _uploadingAvatar = true);
+
+      await AppScope.instance.authRepository.uploadAvatar(picked.path);
+
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Аватар обновлён'), backgroundColor: Colors.green),
+      );
+      _reload();
+    } catch (e) {
+      messenger.showSnackBar(
+        SnackBar(content: Text('Ошибка загрузки: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
   }
 
   // ── Financial section ────────────────────────────────────────────────
@@ -1180,7 +1242,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: GestureDetector(
-                    onTap: _onAvatarTap,
+                    onTap: _uploadingAvatar ? null : _onAvatarTap,
                     child: Stack(
                       children: [
                         CircleAvatar(
@@ -1190,6 +1252,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ? avatar
                                 : 'https://i.pravatar.cc/150?img=11',
                           ),
+                          child: _uploadingAvatar
+                              ? const CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                              : null,
                         ),
                         Positioned(
                           bottom: 0,

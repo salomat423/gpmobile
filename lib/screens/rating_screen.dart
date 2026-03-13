@@ -55,12 +55,14 @@ class _RatingScreenState extends State<RatingScreen> {
       scope.socialRepository.leaderboard(limit: 20),
       scope.socialRepository.matches(),
       scope.authRepository.me(),
+      scope.socialRepository.matches(status: 'PENDING').catchError((_) => <Map<String, dynamic>>[]),
     ]);
     return {
       'league': results[0],
       'leaderboard': results[1],
       'matches': results[2],
       'me': results[3],
+      'pending': results[4],
     };
   }
 
@@ -115,6 +117,7 @@ class _RatingScreenState extends State<RatingScreen> {
             .map((e) => e.value.label)
             .firstOrNull ?? 'Мастер';
 
+        final pending = (data['pending'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
         final visibleMatches = _showAllMatches ? matches : matches.take(10).toList();
 
         final canCreateMatch = const ['COACH_PADEL', 'COACH_FITNESS', 'ADMIN'].contains(myRole);
@@ -134,14 +137,12 @@ class _RatingScreenState extends State<RatingScreen> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
-                // --- HERO LEAGUE CARD ---
                 _buildLeagueCard(isDark, leagueData, elo, nextLeagueName, progress),
 
                 const SizedBox(height: 24),
                 const Text('Топ игроков', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
                 const SizedBox(height: 8),
 
-                // --- LEADERBOARD ---
                 ...List.generate(board.take(10).length, (i) {
                   final u = board[i];
                   final rank = i + 1;
@@ -155,11 +156,11 @@ class _RatingScreenState extends State<RatingScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     decoration: BoxDecoration(
                       color: isMe
-                          ? AppTheme.primaryColor.withOpacity(0.1)
+                          ? AppTheme.primaryColor.withValues(alpha: 0.1)
                           : Theme.of(context).cardColor,
                       borderRadius: BorderRadius.circular(16),
                       border: isMe
-                          ? Border.all(color: AppTheme.primaryColor.withOpacity(0.5), width: 2)
+                          ? Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.5), width: 2)
                           : rank <= 3
                               ? Border.all(color: _rankColor(rank).withValues(alpha: 0.4), width: 1.5)
                               : null,
@@ -223,27 +224,49 @@ class _RatingScreenState extends State<RatingScreen> {
 
                 // --- PENDING CONFIRMATIONS ---
                 const SizedBox(height: 24),
-                const Text('Ожидают подтверждения', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-                const SizedBox(height: 8),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardColor,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: const Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.check_circle_outline, color: Colors.grey, size: 20),
-                      SizedBox(width: 8),
-                      Text(
-                        'Нет матчей, ожидающих подтверждения',
-                        style: TextStyle(color: Colors.grey, fontSize: 14),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Ожидают подтверждения', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+                    ),
+                    if (pending.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.orange,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${pending.length}',
+                          style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    ],
-                  ),
+                  ],
                 ),
+                const SizedBox(height: 8),
+
+                if (pending.isEmpty)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    child: const Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.check_circle_outline, color: Colors.grey, size: 20),
+                        SizedBox(width: 8),
+                        Text(
+                          'Нет матчей, ожидающих подтверждения',
+                          style: TextStyle(color: Colors.grey, fontSize: 14),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  ...pending.map((pm) => _buildPendingCard(context, pm, myId)),
 
                 // --- MATCHES ---
                 const SizedBox(height: 24),
@@ -338,6 +361,114 @@ class _RatingScreenState extends State<RatingScreen> {
         ],
       ),
     );
+  }
+
+  Widget _buildPendingCard(BuildContext context, Map<String, dynamic> pm, dynamic myId) {
+    final matchId = (pm['id'] as num?)?.toInt() ?? 0;
+    final score = (pm['score'] ?? '-').toString();
+    final date = (pm['date_formatted'] ?? pm['date'] ?? '').toString();
+    final creatorName = (pm['created_by_name'] ?? pm['creator_name'] ?? '').toString();
+
+    final teamANames = (pm['team_a_names'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final teamBNames = (pm['team_b_names'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final teamA = teamANames.isNotEmpty
+        ? teamANames.map((p) => (p['name'] ?? '').toString()).join(', ')
+        : (pm['team_a'] as List?)?.join(', ') ?? '';
+    final teamB = teamBNames.isNotEmpty
+        ? teamBNames.map((p) => (p['name'] ?? '').toString()).join(', ')
+        : (pm['team_b'] as List?)?.join(', ') ?? '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.orange.withValues(alpha: 0.4), width: 1.5),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.pending_actions, color: Colors.orange, size: 20),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Счёт: $score',
+                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                ),
+              ),
+              Text(date, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (teamA.isNotEmpty || teamB.isNotEmpty) ...[
+            _pendingTeamRow('Команда A', teamA),
+            const SizedBox(height: 4),
+            _pendingTeamRow('Команда B', teamB),
+            const SizedBox(height: 4),
+          ],
+          if (creatorName.isNotEmpty)
+            Text('Создал: $creatorName', style: const TextStyle(fontSize: 12, color: Colors.grey)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _confirmMatchAction(matchId, accept: false),
+                  icon: const Icon(Icons.close, size: 18),
+                  label: const Text('Отклонить'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.redAccent,
+                    side: const BorderSide(color: Colors.redAccent),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: () => _confirmMatchAction(matchId, accept: true),
+                  icon: const Icon(Icons.check, size: 18),
+                  label: const Text('Подтвердить'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppTheme.primaryColor,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _pendingTeamRow(String label, String names) {
+    return Row(
+      children: [
+        Text('$label: ', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: Colors.grey)),
+        Expanded(child: Text(names, style: const TextStyle(fontSize: 13))),
+      ],
+    );
+  }
+
+  Future<void> _confirmMatchAction(int matchId, {required bool accept}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await AppScope.instance.socialRepository.confirmMatch(matchId, accept: accept);
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(accept ? 'Матч подтверждён' : 'Матч отклонён'),
+          backgroundColor: accept ? Colors.green : Colors.redAccent,
+        ),
+      );
+      _reload();
+    } catch (e) {
+      messenger.showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+    }
   }
 
   Widget _buildMatchCard(BuildContext context, Map<String, dynamic> m, dynamic myId) {
@@ -609,7 +740,7 @@ class _CreateMatchSheetState extends State<_CreateMatchSheet> {
                   const Text('Корт (необязательно)', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<Map<String, dynamic>>(
-                    value: _selectedCourt,
+                    initialValue: _selectedCourt,
                     decoration: InputDecoration(
                       hintText: 'Выберите корт',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -649,9 +780,9 @@ class _CreateMatchSheetState extends State<_CreateMatchSheet> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: AppTheme.primaryColor.withOpacity(0.08),
+              color: AppTheme.primaryColor.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: AppTheme.primaryColor.withOpacity(0.3)),
+              border: Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [

@@ -147,12 +147,23 @@ class SocialRepository {
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
-  Future<List<Map<String, dynamic>>> matches({bool all = false}) async {
+  Future<List<Map<String, dynamic>>> matches({bool all = false, String? status}) async {
+    final qp = <String, dynamic>{};
+    if (all) qp['all'] = 1;
+    if (status != null) qp['status'] = status;
     final data = await _api.get(
       '/gamification/matches/',
-      queryParameters: all ? {'all': 1} : null,
+      queryParameters: qp.isEmpty ? null : qp,
     );
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<Map<String, dynamic>> confirmMatch(int matchId, {required bool accept}) async {
+    final data = await _api.post(
+      '/gamification/matches/$matchId/confirm/',
+      data: {'accept': accept},
+    );
+    return Map<String, dynamic>.from(data as Map);
   }
 
   Future<Map<String, dynamic>> createMatch({

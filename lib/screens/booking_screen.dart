@@ -18,6 +18,8 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
   late Future<List<Map<String, dynamic>>> _bookingsFuture;
   late Future<List<Map<String, dynamic>>> _membershipsFuture;
 
+  String _sportFilter = 'ALL';
+
   @override
   void initState() {
     super.initState();
@@ -37,6 +39,56 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     _membershipsFuture = AppScope.instance.membershipRepository.myMemberships();
   }
 
+  static const _padelTypes = {'INDOOR', 'OUTDOOR', 'PANORAMIC'};
+
+  List<Map<String, dynamic>> _filterCourts(List<Map<String, dynamic>> courts) {
+    if (_sportFilter == 'ALL') return courts;
+    return courts.where((c) {
+      final ct = (c['court_type'] ?? '').toString().toUpperCase();
+      switch (_sportFilter) {
+        case 'PADEL': return _padelTypes.contains(ct);
+        case 'SQUASH': return ct == 'SQUASH';
+        case 'PING_PONG': return ct == 'PING_PONG';
+        default: return true;
+      }
+    }).toList();
+  }
+
+  static String _courtTypeLabel(String ct) {
+    switch (ct.toUpperCase()) {
+      case 'INDOOR': return 'Крытый';
+      case 'OUTDOOR': return 'Открытый';
+      case 'PANORAMIC': return 'Панорамный';
+      case 'SQUASH': return 'Сквош';
+      case 'PING_PONG': return 'Пинг-понг';
+      default: return ct;
+    }
+  }
+
+  static String _playFormatLabel(String pf) {
+    switch (pf.toUpperCase()) {
+      case 'TWO_VS_TWO': return '2×2';
+      case 'ONE_VS_ONE': return '1×1';
+      default: return pf;
+    }
+  }
+
+  static int _maxFriends(String playFormat) {
+    switch (playFormat.toUpperCase()) {
+      case 'TWO_VS_TWO': return 3;
+      case 'ONE_VS_ONE': return 1;
+      default: return 3;
+    }
+  }
+
+  static IconData _sportIcon(String ct) {
+    switch (ct.toUpperCase()) {
+      case 'SQUASH': return Icons.sports_handball;
+      case 'PING_PONG': return Icons.sports_cricket;
+      default: return Icons.sports_tennis;
+    }
+  }
+
   Future<void> _openCourtSheet(Map<String, dynamic> court) async {
     final courtId = (court['id'] as num?)?.toInt();
     if (courtId == null) return;
@@ -47,6 +99,9 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     final description = (court['description'] ?? '').toString();
     final imageUrl = court['image']?.toString() ?? court['image_url']?.toString();
     final isActive = court['is_active'] == true;
+    final playFormat = (court['play_format'] ?? '').toString();
+    final priceSlots = (court['price_slots'] as List?) ?? [];
+    final maxFriends = _maxFriends(playFormat);
 
     DateTime selectedDate = DateTime.now();
     TimeOfDay selectedTime = TimeOfDay(hour: DateTime.now().hour + 1, minute: 0);
@@ -56,9 +111,6 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     String paymentMethod = 'KASPI';
     String promoCode = '';
 
-    bool svcInventory = false;
-    bool svcRecovery = false;
-    bool svcSportBar = false;
     String? promoMessage;
     Color? promoColor;
     bool promoValid = false;
@@ -66,7 +118,17 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     String promoDiscountType = '';
     double promoDiscountValue = 0;
 
+    List<int> selectedFriendIds = [];
+    List<Map<String, dynamic>> selectedFriends = [];
+    List<Map<String, dynamic>> selectedServices = [];
+
     final promoController = TextEditingController();
+    final friendSearchController = TextEditingController();
+
+    final sportGroup = _padelTypes.contains(courtType.toUpperCase()) ? 'PADEL' : courtType.toUpperCase();
+    Future<List<Map<String, dynamic>>> servicesFuture =
+        AppScope.instance.secondaryRepository.services(group: sportGroup, category: 'INVENTORY')
+            .catchError((_) => <Map<String, dynamic>>[]);
 
     Future<List<Map<String, dynamic>>> loadCoaches() {
       final slot = DateTime(
@@ -101,11 +163,6 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) {
           final isDark = Theme.of(ctx).brightness == Brightness.dark;
-
-          final bool isEvening = selectedTime.hour >= 18;
-          final bool isWeekend =
-              selectedDate.weekday == DateTime.saturday ||
-              selectedDate.weekday == DateTime.sunday;
 
           return DraggableScrollableSheet(
             initialChildSize: 0.88,
@@ -158,41 +215,47 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                           ],
                         ),
                         const SizedBox(height: 6),
-                        if (courtType.isNotEmpty)
-                          Text(courtType, style: const TextStyle(color: Colors.grey, fontSize: 14)),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
+                          children: [
+                            if (courtType.isNotEmpty)
+                              _infoBadge(_courtTypeLabel(courtType), Colors.blueGrey),
+                            if (playFormat.isNotEmpty)
+                              _infoBadge('Формат: ${_playFormatLabel(playFormat)}', AppTheme.primaryColor),
+                          ],
+                        ),
                         if (description.isNotEmpty) ...[
                           const SizedBox(height: 8),
                           Text(description, style: const TextStyle(fontSize: 14, color: Colors.grey)),
                         ],
                         const SizedBox(height: 8),
 
-                        // Price + premium rate badges
-                        Wrap(
-                          crossAxisAlignment: WrapCrossAlignment.center,
-                          spacing: 8,
-                          runSpacing: 6,
-                          children: [
-                            Text('$price тг/час', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.primaryColor)),
-                            if (isEvening)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.orange.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text('Вечер +', style: TextStyle(color: Colors.orange, fontSize: 11, fontWeight: FontWeight.bold)),
+                        if (priceSlots.isNotEmpty) ...[
+                          ...priceSlots.map((slot) {
+                            final s = slot is Map ? Map<String, dynamic>.from(slot) : <String, dynamic>{};
+                            final sStart = (s['start_time'] ?? '').toString();
+                            final sEnd = (s['end_time'] ?? '').toString();
+                            final sPrice = (s['price_per_hour'] ?? '').toString();
+                            final startLabel = sStart.length >= 5 ? sStart.substring(0, 5) : sStart;
+                            final endLabel = sEnd == '00:00:00' || sEnd == '00:00' ? '24:00' : (sEnd.length >= 5 ? sEnd.substring(0, 5) : sEnd);
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 4),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.schedule, size: 14, color: Colors.grey[500]),
+                                  const SizedBox(width: 6),
+                                  Text('$startLabel – $endLabel', style: TextStyle(fontSize: 13, color: Colors.grey[600])),
+                                  const Spacer(),
+                                  Text('${_fmt0(sPrice)} тг/час', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppTheme.primaryColor)),
+                                ],
                               ),
-                            if (isWeekend)
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.deepPurple.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Text('Выходной +', style: TextStyle(color: Colors.deepPurple, fontSize: 11, fontWeight: FontWeight.bold)),
-                              ),
-                          ],
-                        ),
+                            );
+                          }),
+                          const SizedBox(height: 4),
+                        ] else ...[
+                          Text('$price тг/час', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppTheme.primaryColor)),
+                        ],
 
                         const SizedBox(height: 20),
                         const Divider(),
@@ -439,32 +502,162 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                           },
                         ),
 
-                        // --- Additional services ---
+                        // --- Friends / participants ---
+                        const SizedBox(height: 16),
+                        Text('Участники (макс. ${maxFriends + 1} чел.)', style: const TextStyle(fontWeight: FontWeight.w600)),
+                        const SizedBox(height: 8),
+                        if (selectedFriends.isNotEmpty)
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: selectedFriends.map((f) {
+                              final fName = '${f['first_name'] ?? ''} ${f['last_name'] ?? ''}'.trim();
+                              return Chip(
+                                avatar: const Icon(Icons.person, size: 16),
+                                label: Text(fName.isEmpty ? 'Игрок' : fName, style: const TextStyle(fontSize: 12)),
+                                onDeleted: () => setSheetState(() {
+                                  final fId = (f['id'] as num?)?.toInt();
+                                  selectedFriendIds.remove(fId);
+                                  selectedFriends.removeWhere((x) => x['id'] == f['id']);
+                                }),
+                                deleteIconColor: Colors.redAccent,
+                                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              );
+                            }).toList(),
+                          ),
+                        if (selectedFriendIds.length < maxFriends)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: SizedBox(
+                              height: 44,
+                              child: TextField(
+                                controller: friendSearchController,
+                                decoration: InputDecoration(
+                                  hintText: 'Поиск друга по имени...',
+                                  prefixIcon: const Icon(Icons.person_add_outlined, size: 18),
+                                  filled: true,
+                                  fillColor: Colors.grey.withValues(alpha: 0.08),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                                  isDense: true,
+                                ),
+                                onSubmitted: (query) async {
+                                  if (query.trim().isEmpty) return;
+                                  try {
+                                    final results = await AppScope.instance.authRepository.searchUsers(query.trim());
+                                    if (!ctx.mounted) return;
+                                    final available = results.where((u) {
+                                      final uid = (u['id'] as num?)?.toInt();
+                                      return uid != null && !selectedFriendIds.contains(uid);
+                                    }).toList();
+                                    if (available.isEmpty) {
+                                      ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('Пользователи не найдены')));
+                                      return;
+                                    }
+                                    final picked = await showModalBottomSheet<Map<String, dynamic>>(
+                                      context: ctx,
+                                      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+                                      builder: (c) => ListView(
+                                        shrinkWrap: true,
+                                        padding: const EdgeInsets.symmetric(vertical: 12),
+                                        children: available.map((u) {
+                                          final uName = '${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'.trim();
+                                          return ListTile(
+                                            leading: const CircleAvatar(child: Icon(Icons.person)),
+                                            title: Text(uName.isEmpty ? 'Игрок' : uName),
+                                            subtitle: Text((u['phone_number'] ?? u['username'] ?? '').toString(), style: const TextStyle(fontSize: 12)),
+                                            onTap: () => Navigator.pop(c, u),
+                                          );
+                                        }).toList(),
+                                      ),
+                                    );
+                                    if (picked != null && ctx.mounted) {
+                                      final pickedId = (picked['id'] as num?)?.toInt();
+                                      if (pickedId != null && !selectedFriendIds.contains(pickedId)) {
+                                        setSheetState(() {
+                                          selectedFriendIds.add(pickedId);
+                                          selectedFriends.add(picked);
+                                          friendSearchController.clear();
+                                        });
+                                      }
+                                    }
+                                  } catch (e) {
+                                    if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+
+                        // --- Additional services (from API) ---
                         const SizedBox(height: 16),
                         const Text('Дополнительные услуги', style: TextStyle(fontWeight: FontWeight.w600)),
                         const SizedBox(height: 8),
-                        _serviceCheckbox(
-                          isDark: isDark,
-                          icon: Icons.sports_tennis,
-                          title: 'Аренда инвентаря',
-                          value: svcInventory,
-                          onChanged: (v) => setSheetState(() => svcInventory = v ?? false),
-                        ),
-                        const SizedBox(height: 6),
-                        _serviceCheckbox(
-                          isDark: isDark,
-                          icon: Icons.spa_outlined,
-                          title: 'Восстановительные процедуры',
-                          value: svcRecovery,
-                          onChanged: (v) => setSheetState(() => svcRecovery = v ?? false),
-                        ),
-                        const SizedBox(height: 6),
-                        _serviceCheckbox(
-                          isDark: isDark,
-                          icon: Icons.local_bar_outlined,
-                          title: 'Услуги спорт-бара',
-                          value: svcSportBar,
-                          onChanged: (v) => setSheetState(() => svcSportBar = v ?? false),
+                        FutureBuilder<List<Map<String, dynamic>>>(
+                          future: servicesFuture,
+                          builder: (ctx, snap) {
+                            if (snap.connectionState == ConnectionState.waiting) {
+                              return const SizedBox(height: 40, child: Center(child: LinearProgressIndicator()));
+                            }
+                            final svcList = snap.data ?? [];
+                            if (svcList.isEmpty) {
+                              return Text('Нет доступных услуг', style: TextStyle(color: Colors.grey[500], fontSize: 12));
+                            }
+                            return Column(
+                              children: svcList.map((svc) {
+                                final svcId = (svc['id'] as num?)?.toInt() ?? 0;
+                                final svcName = (svc['name'] ?? '').toString();
+                                final svcPrice = (svc['price'] ?? '').toString();
+                                final svcImage = svc['image']?.toString();
+                                final svcDesc = (svc['description'] ?? '').toString();
+                                final isSelected = selectedServices.any((s) => (s['id'] as num?)?.toInt() == svcId);
+                                return Container(
+                                  margin: const EdgeInsets.only(bottom: 6),
+                                  decoration: BoxDecoration(
+                                    color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.withValues(alpha: 0.06),
+                                    borderRadius: BorderRadius.circular(14),
+                                    border: isSelected ? Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.5), width: 1.5) : null,
+                                  ),
+                                  child: CheckboxListTile(
+                                    value: isSelected,
+                                    onChanged: (v) => setSheetState(() {
+                                      if (v == true) {
+                                        selectedServices.add(svc);
+                                      } else {
+                                        selectedServices.removeWhere((s) => (s['id'] as num?)?.toInt() == svcId);
+                                      }
+                                    }),
+                                    title: Row(
+                                      children: [
+                                        if (svcImage != null && svcImage.isNotEmpty)
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(8),
+                                            child: Image.network(svcImage, width: 36, height: 36, fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => Icon(_sportIcon(courtType), size: 20, color: AppTheme.primaryColor)),
+                                          )
+                                        else
+                                          Icon(_sportIcon(courtType), size: 20, color: AppTheme.primaryColor),
+                                        const SizedBox(width: 10),
+                                        Expanded(child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text(svcName, style: const TextStyle(fontSize: 14)),
+                                            if (svcDesc.isNotEmpty)
+                                              Text(svcDesc, style: TextStyle(fontSize: 11, color: Colors.grey[500]), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                          ],
+                                        )),
+                                      ],
+                                    ),
+                                    subtitle: Text('$svcPrice тг', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppTheme.primaryColor)),
+                                    controlAffinity: ListTileControlAffinity.trailing,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                                    dense: true,
+                                  ),
+                                );
+                              }).toList(),
+                            );
+                          },
                         ),
 
                         // --- Promo code ---
@@ -582,15 +775,13 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                                       coachId: selectedCoachId,
                                       coachName: selectedCoachName,
                                       promoCode: promoCode.trim(),
-                                      services: [
-                                        if (svcInventory) 'inventory',
-                                        if (svcRecovery) 'recovery',
-                                        if (svcSportBar) 'sport_bar',
-                                      ],
+                                      friendIds: selectedFriendIds,
+                                      serviceItems: selectedServices,
                                       promoApplied: promoValid,
                                       promoDiscountType: promoDiscountType,
                                       promoDiscountValue: promoDiscountValue,
                                       promoLabel: promoTitle,
+                                      playFormat: playFormat,
                                     )
                                 : null,
                             child: const Text('Забронировать', style: TextStyle(fontSize: 16)),
@@ -611,9 +802,10 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                               paymentMethod = 'KASPI';
                               promoCode = '';
                               promoController.clear();
-                              svcInventory = false;
-                              svcRecovery = false;
-                              svcSportBar = false;
+                              friendSearchController.clear();
+                              selectedFriendIds = [];
+                              selectedFriends = [];
+                              selectedServices = [];
                               promoMessage = null;
                               promoColor = null;
                               promoValid = false;
@@ -650,11 +842,13 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     int? coachId,
     String? coachName,
     String? promoCode,
-    List<String> services = const [],
+    List<int> friendIds = const [],
+    List<Map<String, dynamic>> serviceItems = const [],
     bool promoApplied = false,
     String promoDiscountType = '',
     double promoDiscountValue = 0,
     String promoLabel = '',
+    String playFormat = '',
   }) async {
     final start = DateTime(date.year, date.month, date.day, time.hour, time.minute).toUtc();
     final messenger = ScaffoldMessenger.of(context);
@@ -668,6 +862,13 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     if (coachId != null) payload['coach'] = coachId;
     final promo = (promoCode ?? '').trim();
     if (promo.isNotEmpty) payload['promo_code'] = promo;
+    if (friendIds.isNotEmpty) payload['friends_ids'] = friendIds;
+
+    final apiServices = serviceItems
+        .map((s) => {'service_id': (s['id'] as num?)?.toInt(), 'quantity': 1})
+        .where((s) => s['service_id'] != null)
+        .toList();
+    if (apiServices.isNotEmpty) payload['services'] = apiServices;
 
     try {
       final availability = await AppScope.instance.bookingRepository.checkAvailability(
@@ -688,18 +889,18 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
         'duration': duration,
       };
       if (coachId != null) previewPayload['coach_id'] = coachId;
-      // services are informational only (no real IDs from hardcoded checkboxes)
+      if (apiServices.isNotEmpty) previewPayload['services'] = apiServices;
       if (promo.isNotEmpty) previewPayload['promo_code'] = promo;
 
       final preview = await AppScope.instance.bookingRepository.pricePreview(previewPayload);
       if (!mounted) return;
 
       final timeStr = '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-      final serviceLabels = _serviceLabels(services);
-
-      final courtCost = courtPricePerHour * duration / 60;
+      final serviceLabels = serviceItems.map((s) => (s['name'] ?? '').toString()).where((n) => n.isNotEmpty).toList();
 
       final breakdown = (preview['breakdown'] as Map?)?.cast<String, dynamic>() ?? {};
+      final bCourt = _parseDouble(breakdown['court'] ?? preview['court_price']);
+      final courtCost = bCourt > 0 ? bCourt : courtPricePerHour * duration / 60;
       final bCoach = _parseDouble(breakdown['coach'] ?? preview['coach_price']);
       final bServices = _parseDouble(breakdown['services'] ?? preview['services_price'] ?? preview['service_total']);
       final bPrimeTime = _parseDouble(breakdown['prime_time_surcharge']);
@@ -741,6 +942,11 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                 if (coachName != null) ...[
                   const SizedBox(height: 2),
                   Text('Тренер: $coachName', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                ],
+                if (friendIds.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text('Игроков: ${friendIds.length + 1}${playFormat.isNotEmpty ? ' (${_playFormatLabel(playFormat)})' : ''}',
+                    style: const TextStyle(color: Colors.grey, fontSize: 13)),
                 ],
                 if (serviceLabels.isNotEmpty) ...[
                   const SizedBox(height: 2),
@@ -809,7 +1015,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                       : (bCoach > 0 ? _priceRow('Тренер', bCoach.toStringAsFixed(0)) : const SizedBox.shrink()),
                 if (bPrimeTime > 0)
                   _priceRow('Доплата прайм-тайм', bPrimeTime.toStringAsFixed(0)),
-                if (services.isNotEmpty && bServices > 0)
+                if (serviceItems.isNotEmpty && bServices > 0)
                   _priceRow('Доп. услуги', bServices.toStringAsFixed(0)),
                 if (promoApplied && promoDiscountValue > 0 && discountAmount > 0) ...[
                   const SizedBox(height: 4),
@@ -1034,25 +1240,69 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
           return const Center(child: CircularProgressIndicator());
         }
         if (snapshot.hasError) return _errorWidget(snapshot.error, () => setState(_reloadAll));
-        final items = snapshot.data ?? const [];
-        if (items.isEmpty) {
+        final allItems = snapshot.data ?? const [];
+        if (allItems.isEmpty) {
           return const Center(child: Text('Кортов не найдено', style: TextStyle(color: Colors.grey)));
         }
+
+        final hasPadel = allItems.any((c) => _padelTypes.contains((c['court_type'] ?? '').toString().toUpperCase()));
+        final hasSquash = allItems.any((c) => (c['court_type'] ?? '').toString().toUpperCase() == 'SQUASH');
+        final hasPingPong = allItems.any((c) => (c['court_type'] ?? '').toString().toUpperCase() == 'PING_PONG');
+        final showFilters = [hasPadel, hasSquash, hasPingPong].where((v) => v).length > 1;
+
+        final items = _filterCourts(allItems);
+
         return RefreshIndicator(
           onRefresh: () async => setState(_reloadAll),
-          child: GridView.builder(
-            padding: const EdgeInsets.all(16),
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.78,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
-            ),
-            itemCount: items.length,
-            itemBuilder: (context, i) => _buildCourtCard(items[i]),
+          child: Column(
+            children: [
+              if (showFilters)
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Row(
+                    children: [
+                      _sportFilterChip('ALL', 'Все', Icons.grid_view_rounded),
+                      if (hasPadel) _sportFilterChip('PADEL', 'Падел', Icons.sports_tennis),
+                      if (hasSquash) _sportFilterChip('SQUASH', 'Сквош', Icons.sports_handball),
+                      if (hasPingPong) _sportFilterChip('PING_PONG', 'Пинг-понг', Icons.sports_cricket),
+                    ],
+                  ),
+                ),
+              Expanded(
+                child: items.isEmpty
+                    ? const Center(child: Text('Нет кортов в этой категории', style: TextStyle(color: Colors.grey)))
+                    : GridView.builder(
+                        padding: const EdgeInsets.all(16),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 2,
+                          childAspectRatio: 0.72,
+                          mainAxisSpacing: 12,
+                          crossAxisSpacing: 12,
+                        ),
+                        itemCount: items.length,
+                        itemBuilder: (context, i) => _buildCourtCard(items[i]),
+                      ),
+              ),
+            ],
           ),
         );
       },
+    );
+  }
+
+  Widget _sportFilterChip(String key, String label, IconData icon) {
+    final isSelected = _sportFilter == key;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: ChoiceChip(
+        avatar: Icon(icon, size: 16, color: isSelected ? Colors.white : AppTheme.primaryColor),
+        label: Text(label),
+        selected: isSelected,
+        selectedColor: AppTheme.primaryColor,
+        labelStyle: TextStyle(color: isSelected ? Colors.white : null, fontWeight: FontWeight.w600),
+        onSelected: (_) => setState(() => _sportFilter = key),
+      ),
     );
   }
 
@@ -1060,6 +1310,7 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final name = (court['name'] ?? 'Корт').toString();
     final courtType = (court['court_type'] ?? '').toString();
+    final playFormat = (court['play_format'] ?? '').toString();
     final price = (court['price_per_hour'] ?? '—').toString();
     final imageUrl = court['image']?.toString() ?? court['image_url']?.toString();
     final isActive = court['is_active'] == true;
@@ -1078,15 +1329,33 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
           children: [
             Expanded(
               flex: 3,
-              child: SizedBox(
-                width: double.infinity,
-                child: imageUrl != null && imageUrl.isNotEmpty
-                    ? Image.network(
-                        imageUrl.startsWith('http') ? imageUrl : '${AppConfig.baseUrl}$imageUrl',
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => _courtPlaceholder(isDark),
-                      )
-                    : _courtPlaceholder(isDark),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  imageUrl != null && imageUrl.isNotEmpty
+                      ? Image.network(
+                          imageUrl.startsWith('http') ? imageUrl : '${AppConfig.baseUrl}$imageUrl',
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _courtPlaceholder(isDark),
+                        )
+                      : _courtPlaceholder(isDark),
+                  if (playFormat.isNotEmpty)
+                    Positioned(
+                      top: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black54,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          _playFormatLabel(playFormat),
+                          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                ],
               ),
             ),
             Expanded(
@@ -1098,11 +1367,12 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Text(name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
-                    if (courtType.isNotEmpty) Text(courtType, style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                    if (courtType.isNotEmpty)
+                      Text(_courtTypeLabel(courtType), style: const TextStyle(color: Colors.grey, fontSize: 11)),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text('$price тг', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.primaryColor)),
+                        Flexible(child: Text('${_fmt0(price)} тг', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: AppTheme.primaryColor))),
                         Container(
                           width: 8, height: 8,
                           decoration: BoxDecoration(color: isActive ? Colors.green : Colors.red, shape: BoxShape.circle),
@@ -1991,6 +2261,17 @@ class _BookingScreenState extends State<BookingScreen> with SingleTickerProvider
   }
 }
 
+Widget _infoBadge(String label, Color color) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.12),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Text(label, style: TextStyle(color: color, fontSize: 12, fontWeight: FontWeight.bold)),
+  );
+}
+
 Widget _courtPlaceholder(bool isDark) {
   return Container(
     color: isDark ? Colors.grey[800] : Colors.grey[200],
@@ -2112,47 +2393,6 @@ void _showModernTimePicker(BuildContext ctx, TimeOfDay current, ValueChanged<Tim
       ),
     ),
   );
-}
-
-Widget _serviceCheckbox({
-  required bool isDark,
-  required IconData icon,
-  required String title,
-  required bool value,
-  required ValueChanged<bool?> onChanged,
-}) {
-  return Container(
-    decoration: BoxDecoration(
-      color: isDark ? Colors.white.withValues(alpha: 0.05) : Colors.grey.withValues(alpha: 0.06),
-      borderRadius: BorderRadius.circular(14),
-    ),
-    child: CheckboxListTile(
-      value: value,
-      onChanged: onChanged,
-      title: Row(
-        children: [
-          Icon(icon, size: 20, color: AppTheme.primaryColor),
-          const SizedBox(width: 10),
-          Expanded(child: Text(title, style: const TextStyle(fontSize: 14))),
-        ],
-      ),
-      controlAffinity: ListTileControlAffinity.trailing,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      dense: true,
-    ),
-  );
-}
-
-List<String> _serviceLabels(List<String> services) {
-  return services.map((s) {
-    switch (s) {
-      case 'inventory': return 'Аренда инвентаря';
-      case 'recovery': return 'Восстановительные процедуры';
-      case 'sport_bar': return 'Услуги спорт-бара';
-      default: return s;
-    }
-  }).toList();
 }
 
 Widget _priceRow(String label, dynamic amount, {bool isDiscount = false, bool isBold = false}) {
