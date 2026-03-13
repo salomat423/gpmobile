@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/di/app_scope.dart';
 import '../core/network/api_error.dart';
+import '../core/push_notification_service.dart';
 
 import '../theme/app_theme.dart';
 import 'main_wrapper.dart';
@@ -55,11 +56,14 @@ class _OtpScreenState extends State<OtpScreen> {
       AppScope.instance.authState.value = AuthState.authenticated;
       if (!mounted) return;
 
+      // Отправить FCM-токен на бэкенд для push-уведомлений
+      PushNotificationService.instance.requestPermissionAndSyncToken();
+
       final isNewUser = result['is_new_user'] == true;
       final isProfileComplete = result['is_profile_complete'] == true;
       final access = (result['access'] ?? '').toString();
       final role = (result['role'] ?? '').toString().toUpperCase();
-      final isCoach = role == 'COACH_PADEL' || role == 'COACH_FITNESS';
+      final isCoach = role == 'COACH_PADEL' || role == 'COACH_FITNESS' || role == 'COACH_GYM';
 
       if (isNewUser || !isProfileComplete) {
         Navigator.of(context).pushAndRemoveUntil(
@@ -230,6 +234,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
 
       if (!mounted) return;
       AppScope.instance.authState.value = AuthState.authenticated;
+      PushNotificationService.instance.requestPermissionAndSyncToken();
       Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute(builder: (_) => widget.isCoach ? const TrainerMainWrapper() : const MainWrapper()),
             (route) => false,

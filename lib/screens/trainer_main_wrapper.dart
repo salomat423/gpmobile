@@ -175,7 +175,9 @@ class _TrainerQrTabState extends State<_TrainerQrTab> {
         ? 'Тренер по паделу'
         : role == 'COACH_FITNESS'
             ? 'Фитнес-тренер'
-            : 'Тренер';
+            : role == 'COACH_GYM'
+                ? 'Тренер по залу (GYM)'
+                : 'Тренер';
     final avatar = _me?['avatar']?.toString();
 
     return Row(children: [

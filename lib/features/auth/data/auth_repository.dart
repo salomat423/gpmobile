@@ -31,12 +31,23 @@ class AuthRepository {
     final access = (map['access'] ?? '').toString();
     final refresh = (map['refresh'] ?? '').toString();
     final userId = map['user_id'] is int ? map['user_id'] as int : int.tryParse('${map['user_id']}');
+    var role = map['role']?.toString().trim();
     await _storage.saveTokens(
       access: access,
       refresh: refresh,
       userId: userId,
-      role: map['role']?.toString(),
+      role: role?.isNotEmpty == true ? role : null,
     );
+    // Если бэкенд не вернул роль в ответе логина — берём из профиля
+    if (role == null || role.isEmpty) {
+      try {
+        final meData = await me();
+        final roleFromMe = meData['role']?.toString().trim();
+        if (roleFromMe != null && roleFromMe.isNotEmpty) {
+          await _storage.saveRole(roleFromMe);
+        }
+      } catch (_) {}
+    }
     await _postLoginSyncFcm(fcmToken);
     return map;
   }

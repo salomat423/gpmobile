@@ -32,10 +32,14 @@ class _CoachScheduleScreenState extends State<CoachScheduleScreen> {
     _loadMyLobbies();
   }
 
-  Future<List<Map<String, dynamic>>> _load() {
+  Future<List<Map<String, dynamic>>> _load() async {
     final from = _iso(_range.start);
     final to = _iso(_range.end);
-    return AppScope.instance.bookingRepository.coachSchedule(from: from, to: to);
+    try {
+      final schedule = await AppScope.instance.bookingRepository.coachSchedule(from: from, to: to);
+      if (schedule.isNotEmpty) return schedule;
+    } catch (_) {}
+    return AppScope.instance.bookingRepository.myBookings();
   }
 
   Future<void> _loadMyLobbies() async {
@@ -43,16 +47,82 @@ class _CoachScheduleScreenState extends State<CoachScheduleScreen> {
       final me = await AppScope.instance.authRepository.me();
       if (!mounted) return;
       _myUserId = (me['id'] as num?)?.toInt();
+      if (_myUserId == null) return;
       setState(() {
-        _lobbiesFuture = AppScope.instance.socialRepository
-            .listLobbies()
-            .then((lobbies) => lobbies
-                .where((l) =>
-                    (l['trainer'] as num?)?.toInt() == _myUserId &&
-                    const ['BOOKED', 'PAID'].contains((l['status'] ?? '').toString()))
-                .toList());
+        _lobbiesFuture = _fetchCoachLobbies();
       });
     } catch (_) {}
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchCoachLobbies() async {
+    final uid = _myUserId;
+    if (uid == null) return [];
+
+    // Сначала пробуем эндпоинт лобби тренера (если бэкенд поддерживает)
+    try {
+      final coachLobbies = await AppScope.instance.socialRepository.lobbiesForCoach();
+      if (coachLobbies.isNotEmpty) {
+        return _filterActiveLobbies(coachLobbies);
+      }
+    } catch (_) {}
+
+    final results = await Future.wait([
+      AppScope.instance.socialRepository.myLobbies().catchError((_) => <Map<String, dynamic>>[]),
+      AppScope.instance.socialRepository.listLobbies().catchError((_) => <Map<String, dynamic>>[]),
+    ]);
+
+    final myLobbies = results[0];
+    final allLobbies = results[1];
+
+    final seen = <int>{};
+    final combined = <Map<String, dynamic>>[];
+
+    for (final l in myLobbies) {
+      final id = (l['id'] as num?)?.toInt();
+      if (id != null) seen.add(id);
+      combined.add(l);
+    }
+
+    for (final l in allLobbies) {
+      final id = (l['id'] as num?)?.toInt();
+      if (id != null && seen.contains(id)) continue;
+      if (_lobbyHasCoach(l, uid)) {
+        if (id != null) seen.add(id);
+        combined.add(l);
+      }
+    }
+
+    return _filterActiveLobbies(combined);
+  }
+
+  List<Map<String, dynamic>> _filterActiveLobbies(List<Map<String, dynamic>> list) {
+    return list.where((l) {
+      final status = (l['status'] ?? '').toString().toUpperCase();
+      return !const ['CANCELED', 'CLOSED'].contains(status);
+    }).toList();
+  }
+
+  bool _lobbyHasCoach(Map<String, dynamic> l, int uid) {
+    for (final key in ['trainer', 'coach', 'trainer_id', 'coach_id']) {
+      final v = l[key];
+      if (v == null) continue;
+      if (v is num && v.toInt() == uid) return true;
+      if (v is String && int.tryParse(v) == uid) return true;
+      if (v is Map) {
+        final id = (v['id'] as num?)?.toInt() ?? int.tryParse('${v['id']}');
+        if (id == uid) return true;
+      }
+    }
+
+    final booking = l['booking'];
+    if (booking is Map) {
+      final bookCoach = booking['coach'] ?? booking['coach_id'] ?? booking['trainer'] ?? booking['trainer_id'];
+      if (bookCoach is num && bookCoach.toInt() == uid) return true;
+      if (bookCoach is String && int.tryParse(bookCoach) == uid) return true;
+      if (bookCoach is Map && ((bookCoach['id'] as num?)?.toInt() ?? int.tryParse('${bookCoach['id']}')) == uid) return true;
+    }
+
+    return false;
   }
 
   void _reload() => setState(() {

@@ -42,6 +42,16 @@ class SocialRepository {
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   }
 
+  /// Лобби, где текущий пользователь назначен тренером. Если бэкенд не поддерживает — вернёт [].
+  Future<List<Map<String, dynamic>>> lobbiesForCoach() async {
+    try {
+      final data = await _api.get('/lobby/coach/');
+      return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
   Future<List<Map<String, dynamic>>> lobbyProposals(int id) async {
     final data = await _api.get('/lobby/$id/proposals/');
     return (data as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();

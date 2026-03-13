@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   cupertino_icons: ^1.0.8
   http: ^1.2.2
   dio: ^5.9.0
@@ -19,6 +21,8 @@ dependencies:
   json_annotation: ^4.9.0
   qr_flutter: ^4.1.0
   image_picker: ^1.1.2
+  firebase_core: ^3.8.1
+  firebase_messaging: ^15.1.5
 
 dev_dependencies:
   flutter_test:

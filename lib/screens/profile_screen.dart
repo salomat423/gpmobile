@@ -3,6 +3,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 
 import '../core/di/app_scope.dart';
+import '../core/storage/token_storage.dart';
 import '../theme/app_theme.dart';
 import 'auth_screen.dart';
 import 'club_services_screen.dart';
@@ -1163,6 +1164,70 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  Widget _buildThemeSelector() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final current = themeNotifier.value;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        children: [
+          _themeOption(
+            icon: Icons.brightness_auto_rounded,
+            label: 'Как в системе',
+            selected: current == ThemeMode.system,
+            onTap: () => _setTheme(ThemeMode.system, 'system'),
+            isDark: isDark,
+          ),
+          Divider(height: 1, indent: 56, color: isDark ? Colors.white10 : Colors.grey.shade200),
+          _themeOption(
+            icon: Icons.light_mode_rounded,
+            label: 'Светлая',
+            selected: current == ThemeMode.light,
+            onTap: () => _setTheme(ThemeMode.light, 'light'),
+            isDark: isDark,
+          ),
+          Divider(height: 1, indent: 56, color: isDark ? Colors.white10 : Colors.grey.shade200),
+          _themeOption(
+            icon: Icons.dark_mode_rounded,
+            label: 'Тёмная',
+            selected: current == ThemeMode.dark,
+            onTap: () => _setTheme(ThemeMode.dark, 'dark'),
+            isDark: isDark,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _themeOption({
+    required IconData icon,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+    required bool isDark,
+  }) {
+    return ListTile(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      leading: Icon(icon, color: selected ? AppTheme.primaryColor : Colors.grey),
+      title: Text(label),
+      trailing: selected
+          ? const Icon(Icons.check_circle_rounded, color: AppTheme.primaryColor, size: 22)
+          : null,
+      onTap: onTap,
+    );
+  }
+
+  void _setTheme(ThemeMode mode, String key) {
+    themeNotifier.value = mode;
+    TokenStorage.instance.saveThemeMode(key);
+    setState(() {});
+  }
+
   Widget _sectionLabel(String text) {
     return Padding(
       padding: const EdgeInsets.only(top: 16, bottom: 8, left: 4),
@@ -1433,6 +1498,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   title: 'Условия использования',
                   onTap: _showTermsDialog,
                 ),
+
+                // ── Settings section ──
+                _sectionLabel('Настройки'),
+                _buildThemeSelector(),
 
                 // ── Account section ──
                 _sectionLabel('Аккаунт'),

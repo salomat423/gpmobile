@@ -26,7 +26,7 @@ class AuthGate extends StatelessWidget {
               return const Scaffold(body: Center(child: CircularProgressIndicator()));
             }
             final role = (snap.data ?? '').toUpperCase();
-            final isCoach = role == 'COACH_PADEL' || role == 'COACH_FITNESS';
+            final isCoach = role == 'COACH_PADEL' || role == 'COACH_FITNESS' || role == 'COACH_GYM';
             return isCoach ? const TrainerMainWrapper() : const MainWrapper();
           },
         );

@@ -13,6 +13,7 @@ class TokenStorage {
   static const _kRole = 'role';
   static const _kIsLoggedIn = 'is_logged_in';
   static const _kFcmToken = 'fcm_token';
+  static const _kThemeMode = 'theme_mode';
 
   Future<String?> readAccessToken() => _secure.read(key: _kAccess);
   Future<String?> readRefreshToken() => _secure.read(key: _kRefresh);
@@ -60,5 +61,22 @@ class TokenStorage {
   Future<String?> readRole() async {
     final prefs = await SharedPreferences.getInstance();
     return prefs.getString(_kRole);
+  }
+
+  /// Сохраняет только роль (например, после получения из /me/).
+  Future<void> saveRole(String role) async {
+    if (role.trim().isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kRole, role.trim());
+  }
+
+  Future<void> saveThemeMode(String mode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kThemeMode, mode);
+  }
+
+  Future<String> readThemeMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_kThemeMode) ?? 'system';
   }
 }

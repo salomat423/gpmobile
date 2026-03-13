@@ -3,6 +3,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import '../core/di/app_scope.dart';
 import '../theme/app_theme.dart';
 import '../screens/sportbar.dart';
+import '../screens/tournament_screen.dart';
 
 String defaultGreeting() {
   final hour = DateTime.now().hour;
@@ -182,7 +183,7 @@ class _HomeBody extends StatelessWidget {
               // --- ТУРНИРЫ И МЕРОПРИЯТИЯ ---
               _buildSectionTitle(titleColor, 'Турниры и мероприятия'),
               const SizedBox(height: 15),
-              _buildTournamentSection(theme, isDark),
+              _buildTournamentSection(context, theme, isDark),
 
               const SizedBox(height: 30),
 
@@ -368,38 +369,55 @@ class _HomeBody extends StatelessWidget {
   }
 
   // --- ТУРНИРЫ И МЕРОПРИЯТИЯ ---
-  Widget _buildTournamentSection(ThemeData theme, bool isDark) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.cardColor,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.03), blurRadius: 10, offset: const Offset(0, 4))],
+  Widget _buildTournamentSection(BuildContext context, ThemeData theme, bool isDark) {
+    return GestureDetector(
+      onTap: () => Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const TournamentScreen()),
       ),
-      child: Row(
-        children: [
-          Container(
-            width: 48, height: 48,
-            decoration: BoxDecoration(
-              color: AppTheme.accentColor.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Icon(Icons.emoji_events_rounded, color: AppTheme.primaryColor, size: 26),
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: isDark
+                ? [AppTheme.primaryColor, const Color(0xFF1B5E20)]
+                : [AppTheme.primaryColor, const Color(0xFF2E7D32)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Text(
-              'Следите за анонсами турниров и мероприятий',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark ? Colors.white70 : AppTheme.textPrimary,
-                height: 1.4,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [BoxShadow(color: AppTheme.primaryColor.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4))],
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 26),
+            ),
+            const SizedBox(width: 16),
+            const Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Турниры и мероприятия',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700, color: Colors.white),
+                  ),
+                  SizedBox(height: 2),
+                  Text(
+                    'Расписание, регистрация, результаты',
+                    style: TextStyle(fontSize: 12, color: Colors.white70),
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+            const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 24),
+          ],
+        ),
       ),
     );
   }
@@ -756,11 +774,35 @@ class _HomeBody extends StatelessWidget {
     );
   }
 
+  static const _shortMonths = [
+    '', 'янв', 'фев', 'мар', 'апр', 'май', 'июн',
+    'июл', 'авг', 'сен', 'окт', 'ноя', 'дек',
+  ];
+
+  static String _courtDisplayName(String raw) {
+    final s = raw.replaceAllMapped(
+      RegExp(r'([a-z])([A-Z])'),
+      (m) => '${m[1]} ${m[2]}',
+    );
+    return s[0].toUpperCase() + s.substring(1);
+  }
+
   Widget _buildBookingCard(BuildContext context, Map<String, dynamic> booking) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-    final status = booking['status'].toString();
-    final isPaid = status == 'Оплачено' || status == 'confirmed' || status == 'CONFIRMED';
+    final status = booking['status'].toString().toUpperCase();
+    final isPaid = status == 'ОПЛАЧЕНО' || status == 'CONFIRMED' || status == 'COMPLETED';
+
+    final rawDate = (booking['date'] ?? '').toString();
+    final dt = DateTime.tryParse(rawDate);
+    final courtName = _courtDisplayName((booking['court'] ?? 'Корт').toString());
+
+    final timeLabel = dt != null
+        ? '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}'
+        : '';
+    final dateLabel = dt != null
+        ? '${dt.day} ${_shortMonths[dt.month]}, $timeLabel'
+        : rawDate;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -772,34 +814,48 @@ class _HomeBody extends StatelessWidget {
       ),
       child: Row(
         children: [
-          _buildDateBadge(isDark, (booking['date'] ?? '').toString()),
-          const SizedBox(width: 16),
+          _buildDateBadge(isDark, dt),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(booking['court'].toString(), style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                Text(booking['date'].toString(), style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                Text(
+                  courtName,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  dateLabel,
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
               ],
             ),
           ),
+          const SizedBox(width: 8),
           _buildStatusBadge(isPaid, isDark),
         ],
       ),
     );
   }
 
-  Widget _buildDateBadge(bool isDark, String dateText) {
-    final parts = dateText.split(' ');
-    final day = parts.isNotEmpty ? parts.first : '--';
-    final month = parts.length > 1 ? parts[1] : '';
+  Widget _buildDateBadge(bool isDark, DateTime? dt) {
+    final day = dt != null ? '${dt.day}' : '--';
+    final month = dt != null ? _shortMonths[dt.month] : '';
     return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(color: isDark ? Colors.white10 : AppTheme.bgColor, borderRadius: BorderRadius.circular(12)),
+      width: 52,
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white10 : AppTheme.bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Text(day, style: const TextStyle(fontWeight: FontWeight.bold)),
-          Text(month, style: TextStyle(fontSize: 10, color: Colors.grey[600])),
+          Text(day, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18)),
+          Text(month, style: TextStyle(fontSize: 11, color: Colors.grey[600])),
         ],
       ),
     );

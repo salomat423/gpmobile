@@ -120,7 +120,7 @@ class _RatingScreenState extends State<RatingScreen> {
         final pending = (data['pending'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
         final visibleMatches = _showAllMatches ? matches : matches.take(10).toList();
 
-        final canCreateMatch = const ['COACH_PADEL', 'COACH_FITNESS', 'ADMIN'].contains(myRole);
+        final canCreateMatch = const ['COACH_PADEL', 'COACH_FITNESS', 'COACH_GYM', 'ADMIN'].contains(myRole);
 
         return Scaffold(
           appBar: AppBar(title: const Text('Мой рейтинг')),
