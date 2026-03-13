@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/di/app_scope.dart';
 import '../theme/app_theme.dart';
+import 'lobby_detail_screen.dart';
 
 class CoachScheduleScreen extends StatefulWidget {
   const CoachScheduleScreen({
@@ -17,6 +18,8 @@ class CoachScheduleScreen extends StatefulWidget {
 
 class _CoachScheduleScreenState extends State<CoachScheduleScreen> {
   late Future<List<Map<String, dynamic>>> _future;
+  Future<List<Map<String, dynamic>>>? _lobbiesFuture;
+  int? _myUserId;
   DateTimeRange _range = DateTimeRange(
     start: DateTime.now(),
     end: DateTime.now().add(const Duration(days: 14)),
@@ -26,6 +29,7 @@ class _CoachScheduleScreenState extends State<CoachScheduleScreen> {
   void initState() {
     super.initState();
     _future = _load();
+    _loadMyLobbies();
   }
 
   Future<List<Map<String, dynamic>>> _load() {
@@ -34,7 +38,27 @@ class _CoachScheduleScreenState extends State<CoachScheduleScreen> {
     return AppScope.instance.bookingRepository.coachSchedule(from: from, to: to);
   }
 
-  void _reload() => setState(() => _future = _load());
+  Future<void> _loadMyLobbies() async {
+    try {
+      final me = await AppScope.instance.authRepository.me();
+      if (!mounted) return;
+      _myUserId = (me['id'] as num?)?.toInt();
+      setState(() {
+        _lobbiesFuture = AppScope.instance.socialRepository
+            .listLobbies()
+            .then((lobbies) => lobbies
+                .where((l) =>
+                    (l['trainer'] as num?)?.toInt() == _myUserId &&
+                    const ['BOOKED', 'PAID'].contains((l['status'] ?? '').toString()))
+                .toList());
+      });
+    } catch (_) {}
+  }
+
+  void _reload() => setState(() {
+    _future = _load();
+    _loadMyLobbies();
+  });
 
   String _iso(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
@@ -148,66 +172,228 @@ class _CoachScheduleScreenState extends State<CoachScheduleScreen> {
             ),
             const SizedBox(height: 8),
             Expanded(
-              child: FutureBuilder<List<Map<String, dynamic>>>(
-                future: _future,
-                builder: (context, snap) {
-                  if (snap.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  if (snap.hasError) {
-                    return Center(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Text(snap.error.toString(), textAlign: TextAlign.center),
-                        const SizedBox(height: 12),
-                        ElevatedButton(onPressed: _reload, child: const Text('Повторить')),
-                      ]),
-                    );
-                  }
-                  final items = snap.data ?? [];
-                  if (items.isEmpty) {
-                    return Center(
-                      child: Column(mainAxisSize: MainAxisSize.min, children: [
-                        Icon(Icons.event_busy_rounded, size: 64, color: Colors.grey.withValues(alpha: 0.3)),
-                        const SizedBox(height: 16),
-                        const Text('Нет занятий в этом периоде', style: TextStyle(color: Colors.grey, fontSize: 16)),
-                        const SizedBox(height: 8),
-                        Text(
-                          '${_formatDate(_range.start)} – ${_formatDate(_range.end)}',
-                          style: const TextStyle(color: Colors.grey, fontSize: 13),
-                        ),
-                      ]),
-                    );
-                  }
+              child: RefreshIndicator(
+                onRefresh: () async => _reload(),
+                child: FutureBuilder<List<Map<String, dynamic>>>(
+                  future: _future,
+                  builder: (context, snap) {
+                    if (snap.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+                    if (snap.hasError) {
+                      return Center(
+                        child: Column(mainAxisSize: MainAxisSize.min, children: [
+                          Text(snap.error.toString(), textAlign: TextAlign.center),
+                          const SizedBox(height: 12),
+                          ElevatedButton(onPressed: _reload, child: const Text('Повторить')),
+                        ]),
+                      );
+                    }
+                    final items = snap.data ?? [];
 
-                  final grouped = _groupByDate(items);
-                  final dates = grouped.keys.toList()..sort();
+                    final grouped = _groupByDate(items);
+                    final dates = grouped.keys.toList()..sort();
 
-                  return RefreshIndicator(
-                    onRefresh: () async => _reload(),
-                    child: ListView.builder(
+                    return ListView(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                      itemCount: dates.length,
-                      itemBuilder: (context, i) {
-                        final date = dates[i];
-                        final bookings = grouped[date]!;
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            if (i > 0) const SizedBox(height: 20),
-                            _dateHeader(date, isDark),
-                            const SizedBox(height: 8),
-                            ...bookings.map((b) => _bookingTile(b, isDark)),
-                          ],
-                        );
-                      },
-                    ),
-                  );
-                },
+                      children: [
+                        _buildLobbyMatchesSection(isDark),
+                        if (items.isEmpty && _lobbiesFuture == null) ...[
+                          const SizedBox(height: 40),
+                          Center(child: Icon(Icons.event_busy_rounded, size: 64, color: Colors.grey.withValues(alpha: 0.3))),
+                          const SizedBox(height: 16),
+                          const Center(child: Text('Нет занятий в этом периоде', style: TextStyle(color: Colors.grey, fontSize: 16))),
+                          const SizedBox(height: 8),
+                          Center(child: Text(
+                            '${_formatDate(_range.start)} – ${_formatDate(_range.end)}',
+                            style: const TextStyle(color: Colors.grey, fontSize: 13),
+                          )),
+                        ],
+                        ...dates.map((date) {
+                          final bookings = grouped[date]!;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const SizedBox(height: 20),
+                              _dateHeader(date, isDark),
+                              const SizedBox(height: 8),
+                              ...bookings.map((b) => _bookingTile(b, isDark)),
+                            ],
+                          );
+                        }),
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildLobbyMatchesSection(bool isDark) {
+    if (_lobbiesFuture == null) return const SizedBox.shrink();
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      future: _lobbiesFuture,
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: LinearProgressIndicator(),
+          );
+        }
+        final lobbies = snap.data ?? [];
+        if (lobbies.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.sports_rounded, color: AppTheme.primaryColor, size: 20),
+              ),
+              const SizedBox(width: 10),
+              const Text('Лобби-матчи', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 17)),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppTheme.primaryColor,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${lobbies.length}',
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ]),
+            const SizedBox(height: 10),
+            ...lobbies.map((lobby) => _lobbyMatchTile(lobby, isDark)),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _lobbyMatchTile(Map<String, dynamic> lobby, bool isDark) {
+    final title = (lobby['title'] ?? 'Лобби').toString();
+    final status = (lobby['status'] ?? '').toString();
+    final courtName = (lobby['court_name'] ?? '').toString();
+    final scheduledTime = (lobby['scheduled_time'] ?? '').toString();
+    final format = (lobby['game_format'] ?? '').toString();
+    final playersCount = (lobby['players_count'] as num?)?.toInt() ??
+        (lobby['current_players_count'] as num?)?.toInt() ?? 0;
+    final maxPlayers = (lobby['max_players'] as num?)?.toInt() ?? 4;
+    final lobbyId = (lobby['id'] as num?)?.toInt();
+    final isPaid = status == 'PAID';
+
+    final dt = DateTime.tryParse(scheduledTime)?.toLocal();
+    final timeLabel = dt != null ? '${_hm(dt)}, ${_formatDate(dt)}' : scheduledTime;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Theme.of(context).cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: isPaid
+            ? Border.all(color: AppTheme.primaryColor.withValues(alpha: 0.4), width: 1.5)
+            : null,
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 8, offset: const Offset(0, 3)),
+        ],
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15))),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: isPaid
+                  ? Colors.green.withValues(alpha: 0.15)
+                  : Colors.purple.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              isPaid ? 'Оплачено' : 'Забронировано',
+              style: TextStyle(
+                fontSize: 11, fontWeight: FontWeight.w700,
+                color: isPaid ? Colors.green : Colors.purple,
+              ),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        if (timeLabel.isNotEmpty) ...[
+          Row(children: [
+            const Icon(Icons.access_time_rounded, size: 16, color: AppTheme.primaryColor),
+            const SizedBox(width: 6),
+            Text(timeLabel, style: const TextStyle(fontSize: 13)),
+          ]),
+          const SizedBox(height: 4),
+        ],
+        if (courtName.isNotEmpty) ...[
+          Row(children: [
+            const Icon(Icons.sports_tennis_rounded, size: 16, color: Colors.grey),
+            const SizedBox(width: 6),
+            Text(courtName, style: const TextStyle(fontSize: 13)),
+          ]),
+          const SizedBox(height: 4),
+        ],
+        Row(children: [
+          const Icon(Icons.people_rounded, size: 16, color: Colors.grey),
+          const SizedBox(width: 6),
+          Text(
+            '$playersCount/$maxPlayers игроков  •  ${format == 'DOUBLE' ? '2v2' : '1v1'}',
+            style: const TextStyle(fontSize: 13, color: Colors.grey),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        Row(children: [
+          if (isPaid && lobbyId != null)
+            Expanded(
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => LobbyDetailScreen(lobbyId: lobbyId)),
+                  ).then((_) => _reload());
+                },
+                icon: const Icon(Icons.scoreboard_rounded, size: 18),
+                label: const Text('Записать результат', style: TextStyle(fontWeight: FontWeight.w600)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primaryColor,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            )
+          else if (lobbyId != null)
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => LobbyDetailScreen(lobbyId: lobbyId)),
+                  ).then((_) => _reload());
+                },
+                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                label: const Text('Открыть лобби'),
+                style: OutlinedButton.styleFrom(
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                ),
+              ),
+            ),
+        ]),
+      ]),
     );
   }
 
