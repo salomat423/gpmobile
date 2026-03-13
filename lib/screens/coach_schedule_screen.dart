@@ -375,154 +375,222 @@ class _CoachScheduleScreenState extends State<CoachScheduleScreen> {
     }
 
     final courtId = (booking['court'] as num?)?.toInt();
+    final lobbyId = (booking['lobby_id'] as num?)?.toInt();
 
-    // Pre-split: first half → A, second half → B
     final mid = (parsed.length / 2).ceil();
     final teamAIds = parsed.sublist(0, mid).map((p) => p['id'] as int).toList();
     final teamBIds = parsed.sublist(mid).map((p) => p['id'] as int).toList();
     final teamANames = parsed.sublist(0, mid).map((p) => p['name'] as String).toList();
     final teamBNames = parsed.sublist(mid).map((p) => p['name'] as String).toList();
 
-    final scoreCtrl = TextEditingController();
-    String winner = 'A';
+    final sets = List.generate(3, (_) => [TextEditingController(), TextEditingController()]);
+    bool submitting = false;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => Padding(
-          padding: EdgeInsets.only(
-            left: 20, right: 20, top: 16,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
-          ),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Center(
-              child: Container(width: 40, height: 4,
-                decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2))),
-            ),
-            const SizedBox(height: 16),
-            const Text('Записать матч', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
-            const SizedBox(height: 16),
+        builder: (ctx, setSheet) {
+          int setsWonA = 0, setsWonB = 0;
+          for (final pair in sets) {
+            final a = int.tryParse(pair[0].text);
+            final b = int.tryParse(pair[1].text);
+            if (a != null && b != null && (a > 0 || b > 0)) {
+              if (a > b) setsWonA++;
+              else if (b > a) setsWonB++;
+            }
+          }
+          final hasWinner = setsWonA >= 2 || setsWonB >= 2;
 
-            // Teams
-            Row(children: [
-              Expanded(
-                child: _teamColumn('Команда A', teamANames, AppTheme.primaryColor),
+          return Padding(
+            padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).scaffoldBackgroundColor,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
               ),
-              const SizedBox(width: 12),
-              const Text('VS', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.grey)),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _teamColumn('Команда B', teamBNames, Colors.orange),
-              ),
-            ]),
-            const SizedBox(height: 16),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Center(child: Container(
+                      width: 40, height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(color: Colors.grey[300], borderRadius: BorderRadius.circular(2)),
+                    )),
+                    const Text('Записать результат матча', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+                    const SizedBox(height: 16),
 
-            // Score
-            TextField(
-              controller: scoreCtrl,
-              decoration: InputDecoration(
-                labelText: 'Счёт (например 6:4)',
-                prefixIcon: const Icon(Icons.scoreboard_outlined),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              keyboardType: TextInputType.text,
-            ),
-            const SizedBox(height: 16),
+                    Row(children: [
+                      Expanded(child: _teamColumn('Команда A', teamANames, AppTheme.primaryColor)),
+                      const SizedBox(width: 12),
+                      const Text('VS', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: Colors.grey)),
+                      const SizedBox(width: 12),
+                      Expanded(child: _teamColumn('Команда B', teamBNames, Colors.orange)),
+                    ]),
+                    const SizedBox(height: 20),
 
-            // Winner
-            const Text('Победитель', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-            const SizedBox(height: 8),
-            Row(children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setSheet(() => winner = 'A'),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: winner == 'A' ? AppTheme.primaryColor : Colors.grey.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
+                    Row(
+                      children: [
+                        const SizedBox(width: 60),
+                        Expanded(child: Center(child: Text('A', style: TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryColor.withValues(alpha: 0.7))))),
+                        const SizedBox(width: 40),
+                        Expanded(child: Center(child: Text('B', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.orange.withValues(alpha: 0.7))))),
+                      ],
                     ),
-                    child: Center(child: Text('Команда A',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: winner == 'A' ? Colors.white : null,
-                      ))),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setSheet(() => winner = 'B'),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: winner == 'B' ? Colors.orange : Colors.grey.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(child: Text('Команда B',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        color: winner == 'B' ? Colors.white : null,
-                      ))),
-                  ),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 20),
+                    const SizedBox(height: 8),
 
-            SizedBox(
-              width: double.infinity,
-              height: 50,
-              child: ElevatedButton.icon(
-                onPressed: () async {
-                  final score = scoreCtrl.text.trim();
-                  if (score.isEmpty) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(
-                      const SnackBar(content: Text('Введите счёт матча')),
-                    );
-                    return;
-                  }
-                  Navigator.pop(ctx);
-                  try {
-                    await AppScope.instance.socialRepository.createMatch(
-                      teamA: teamAIds,
-                      teamB: teamBIds,
-                      score: score,
-                      winnerTeam: winner,
-                      court: courtId,
-                    );
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('✅ Матч записан! ELO обновлено.'),
-                          backgroundColor: Colors.green,
+                    ...List.generate(3, (i) {
+                      final isOptional = i == 2;
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 60,
+                              child: Text(
+                                'Сет ${i + 1}',
+                                style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: isOptional ? Colors.grey : null),
+                              ),
+                            ),
+                            Expanded(
+                              child: TextField(
+                                controller: sets[i][0],
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                onChanged: (_) => setSheet(() {}),
+                                decoration: InputDecoration(
+                                  hintText: '0',
+                                  filled: true,
+                                  fillColor: AppTheme.primaryColor.withValues(alpha: 0.06),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                              ),
+                            ),
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(':', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.grey)),
+                            ),
+                            Expanded(
+                              child: TextField(
+                                controller: sets[i][1],
+                                keyboardType: TextInputType.number,
+                                textAlign: TextAlign.center,
+                                onChanged: (_) => setSheet(() {}),
+                                decoration: InputDecoration(
+                                  hintText: '0',
+                                  filled: true,
+                                  fillColor: Colors.orange.withValues(alpha: 0.06),
+                                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       );
-                    }
-                  } catch (e) {
-                    if (mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Ошибка: $e')),
-                      );
-                    }
-                  }
-                },
-                icon: const Icon(Icons.emoji_events_rounded),
-                label: const Text('Записать результат', style: TextStyle(fontWeight: FontWeight.w600)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppTheme.primaryColor,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    }),
+
+                    if (setsWonA > 0 || setsWonB > 0)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        margin: const EdgeInsets.only(top: 4, bottom: 12),
+                        decoration: BoxDecoration(
+                          color: hasWinner ? Colors.green.withValues(alpha: 0.1) : Colors.grey.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                          border: hasWinner ? Border.all(color: Colors.green.withValues(alpha: 0.3)) : null,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (hasWinner) ...[
+                              const Icon(Icons.emoji_events_rounded, color: Colors.amber, size: 22),
+                              const SizedBox(width: 8),
+                            ],
+                            Text(
+                              hasWinner
+                                  ? 'Победитель: Команда ${setsWonA > setsWonB ? 'A' : 'B'} ($setsWonA:$setsWonB)'
+                                  : 'Счёт по сетам: $setsWonA:$setsWonB',
+                              style: TextStyle(fontWeight: FontWeight.w700, color: hasWinner ? Colors.green : Colors.grey),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    const SizedBox(height: 4),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton.icon(
+                        onPressed: (hasWinner && !submitting)
+                            ? () async {
+                                setSheet(() => submitting = true);
+
+                                final scoreParts = <String>[];
+                                for (final pair in sets) {
+                                  final a = pair[0].text.trim();
+                                  final b = pair[1].text.trim();
+                                  if (a.isNotEmpty && b.isNotEmpty && (a != '0' || b != '0')) {
+                                    scoreParts.add('$a-$b');
+                                  }
+                                }
+                                final score = scoreParts.join(', ');
+                                final winnerTeam = setsWonA > setsWonB ? 'A' : 'B';
+
+                                final messenger = ScaffoldMessenger.of(context);
+                                final nav = Navigator.of(ctx);
+
+                                try {
+                                  await AppScope.instance.socialRepository.createMatch(
+                                    teamA: teamAIds,
+                                    teamB: teamBIds,
+                                    score: score,
+                                    winnerTeam: winnerTeam,
+                                    court: courtId,
+                                  );
+
+                                  if (lobbyId != null) {
+                                    try {
+                                      await AppScope.instance.socialRepository.closeLobby(lobbyId);
+                                    } catch (_) {}
+                                  }
+
+                                  nav.pop();
+                                  messenger.showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Матч записан! ELO обновлено.'),
+                                      backgroundColor: Colors.green,
+                                    ),
+                                  );
+                                  _reload();
+                                } catch (e) {
+                                  setSheet(() => submitting = false);
+                                  messenger.showSnackBar(SnackBar(content: Text('Ошибка: $e')));
+                                }
+                              }
+                            : null,
+                        icon: submitting
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : const Icon(Icons.emoji_events_rounded),
+                        label: Text(submitting ? 'Сохранение...' : 'Записать результат'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppTheme.primaryColor,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ]),
-        ),
+          );
+        },
       ),
     );
   }
