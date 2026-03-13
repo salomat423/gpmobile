@@ -1243,32 +1243,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: GestureDetector(
                     onTap: _uploadingAvatar ? null : _onAvatarTap,
-                    child: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 32,
-                          backgroundImage: NetworkImage(
-                            (avatar != null && avatar.isNotEmpty)
-                                ? avatar
-                                : 'https://i.pravatar.cc/150?img=11',
-                          ),
-                          child: _uploadingAvatar
-                              ? const CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
-                              : null,
-                        ),
-                        Positioned(
-                          bottom: 0,
-                          right: 0,
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            decoration: const BoxDecoration(
-                              color: AppTheme.primaryColor,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.camera_alt, size: 14, color: Colors.white),
-                          ),
-                        ),
-                      ],
+                    child: CircleAvatar(
+                      radius: 32,
+                      backgroundImage: NetworkImage(
+                        (avatar != null && avatar.isNotEmpty)
+                            ? avatar
+                            : 'https://i.pravatar.cc/150?img=11',
+                      ),
+                      child: _uploadingAvatar
+                          ? const CircularProgressIndicator(strokeWidth: 2, color: Colors.white)
+                          : null,
                     ),
                   ),
                   title: Text(
